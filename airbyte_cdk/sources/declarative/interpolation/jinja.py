@@ -3,7 +3,7 @@
 #
 
 import ast
-from functools import cache
+from functools import cache, lru_cache
 from typing import Any, Mapping, Optional, Set, Tuple, Type
 
 from jinja2 import meta
@@ -148,11 +148,14 @@ class JinjaInterpolation(Interpolation):
             return s
 
     @staticmethod
-    @cache
+    @lru_cache(maxsize=None)
     def _find_undeclared_variables(s: Optional[str]) -> Set[str]:
         """
         Find undeclared variables and cache them
         """
+        # Fast path for None or empty string
+        if not s:
+            return set()
         ast = _ENVIRONMENT.parse(s)  # type: ignore # parse is able to handle None
         return meta.find_undeclared_variables(ast)
 
