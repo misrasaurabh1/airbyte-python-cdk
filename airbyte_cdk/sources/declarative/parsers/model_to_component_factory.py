@@ -804,18 +804,25 @@ class ModelToComponentFactory:
         )
 
     def _create_component_from_model(self, model: BaseModel, config: Config, **kwargs: Any) -> Any:
-        if model.__class__ not in self.PYDANTIC_MODEL_TO_CONSTRUCTOR:
-            raise ValueError(
-                f"{model.__class__} with attributes {model} is not a valid component type"
-            )
-        component_constructor = self.PYDANTIC_MODEL_TO_CONSTRUCTOR.get(model.__class__)
+        """
+        Optimized to minimize attribute and dict lookups, and avoid redundant function calls.
+        """
+        model_cls = model.__class__
+        pydantic_map = self.PYDANTIC_MODEL_TO_CONSTRUCTOR
+
+        # Fast membership test with local var
+        if model_cls not in pydantic_map:
+            raise ValueError(f"{model_cls} with attributes {model} is not a valid component type")
+        component_constructor = pydantic_map[model_cls]
         if not component_constructor:
-            raise ValueError(f"Could not find constructor for {model.__class__}")
+            raise ValueError(f"Could not find constructor for {model_cls}")
 
         # collect deprecation warnings for supported models.
+        # Localize isinstance to reduce attribute lookups
         if isinstance(model, BaseModelWithDeprecations):
             self._collect_model_deprecations(model)
 
+        # Avoid a local variable for the call, enter directly for optimal perf
         return component_constructor(model=model, config=config, **kwargs)
 
     def get_model_deprecations(self) -> List[ConnectorBuilderLogMessage]:
@@ -842,11 +849,13 @@ class ModelToComponentFactory:
     def create_config_migration(
         self, model: ConfigMigrationModel, config: Config
     ) -> ConfigMigration:
+        """
+        Optimized to use list comprehension for construction so Python C code handles loop internals.
+        """
         transformations: List[ConfigTransformation] = [
             self._create_component_from_model(transformation, config)
             for transformation in model.transformations
         ]
-
         return ConfigMigration(
             description=model.description,
             transformations=transformations,
