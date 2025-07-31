@@ -134,17 +134,21 @@ class JinjaInterpolation(Interpolation):
         return result
 
     def _eval(self, s: Optional[str], context: Mapping[str, Any]) -> Optional[str]:
+        # Fast path: If s is None or not a string, or looks like a plain string with no Jinja injection
+        if not (isinstance(s, str) and ("{{" in s or "{%" in s or "{#" in s)):
+            return s
+
         try:
             undeclared = self._find_undeclared_variables(s)
-            undeclared_not_in_context = {var for var in undeclared if var not in context}
-            if undeclared_not_in_context:
-                raise ValueError(
-                    f"Jinja macro has undeclared variables: {undeclared_not_in_context}. Context: {context}"
-                )
+            # Avoid building full set if there are no undeclared variables
+            for var in undeclared:
+                if var not in context:
+                    raise ValueError(
+                        f"Jinja macro has undeclared variables: {{{var}}}. Context: {context}"
+                    )
             return self._compile(s).render(context)  # type: ignore # from_string is able to handle None
         except TypeError:
-            # The string is a static value, not a jinja template
-            # It can be returned as is
+            # The string is a static value, not a jinja template, can be returned as is
             return s
 
     @staticmethod
