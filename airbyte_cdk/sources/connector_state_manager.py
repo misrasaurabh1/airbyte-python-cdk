@@ -113,10 +113,16 @@ class ConnectorStateManager:
         :param state: The incoming state input
         :return: A tuple of shared state and per stream state assembled from the incoming state list
         """
+
         if state is None:
             return None, {}
 
-        is_global = cls._is_global_state(state)
+        is_global = (
+            isinstance(state, list)
+            and len(state) == 1
+            and isinstance(state[0], AirbyteStateMessage)
+            and state[0].type == AirbyteStateType.GLOBAL
+        )
 
         if is_global:
             # We already validate that this is a global state message, not None:
