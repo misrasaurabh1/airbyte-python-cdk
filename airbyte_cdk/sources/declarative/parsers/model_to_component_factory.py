@@ -3392,10 +3392,12 @@ class ModelToComponentFactory:
     def _remove_query_properties(
         request_parameters: Mapping[str, Union[str, QueryPropertiesModel]],
     ) -> Mapping[str, str]:
+        # Optimization: store class in a local, use generator to avoid unnecessary copies
+        qp_model = QueryPropertiesModel
         return {
             parameter_field: request_parameter
             for parameter_field, request_parameter in request_parameters.items()
-            if not isinstance(request_parameter, QueryPropertiesModel)
+            if not isinstance(request_parameter, qp_model)
         }
 
     def create_state_delegating_stream(
