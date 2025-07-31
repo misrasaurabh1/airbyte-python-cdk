@@ -349,6 +349,7 @@ class DatetimeBasedCursor(DeclarativeCursor):
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> Mapping[str, Any]:
+        # Directly use _get_request_options for body_data type
         return self._get_request_options(RequestOptionType.body_data, stream_slice)
 
     def get_request_body_json(
@@ -367,17 +368,25 @@ class DatetimeBasedCursor(DeclarativeCursor):
     def _get_request_options(
         self, option_type: RequestOptionType, stream_slice: Optional[StreamSlice]
     ) -> Mapping[str, Any]:
+        # Fast-path early return for no slice
+        if stream_slice is None:
+            return {}
+
         options: MutableMapping[str, Any] = {}
-        if not stream_slice:
-            return options
 
-        if self.start_time_option and self.start_time_option.inject_into == option_type:
-            start_time_value = stream_slice.get(self._partition_field_start.eval(self.config))
-            self.start_time_option.inject_into_request(options, start_time_value, self.config)
+        # Cache fields for faster access
+        start_opt = self.start_time_option
+        end_opt = self.end_time_option
 
-        if self.end_time_option and self.end_time_option.inject_into == option_type:
-            end_time_value = stream_slice.get(self._partition_field_end.eval(self.config))
-            self.end_time_option.inject_into_request(options, end_time_value, self.config)
+        # Both start and end options on the happy path
+        if start_opt and start_opt.inject_into == option_type:
+            s_key = self._partition_field_start.eval(self.config)
+            s_val = stream_slice.get(s_key)
+            start_opt.inject_into_request(options, s_val, self.config)
+        if end_opt and end_opt.inject_into == option_type:
+            e_key = self._partition_field_end.eval(self.config)
+            e_val = stream_slice.get(e_key)
+            end_opt.inject_into_request(options, e_val, self.config)
 
         return options
 
