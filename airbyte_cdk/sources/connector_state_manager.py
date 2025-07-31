@@ -147,12 +147,14 @@ class ConnectorStateManager:
 
     @staticmethod
     def _is_global_state(state: Union[List[AirbyteStateMessage], MutableMapping[str, Any]]) -> bool:
-        return (
-            isinstance(state, List)
-            and len(state) == 1
-            and isinstance(state[0], AirbyteStateMessage)
-            and state[0].type == AirbyteStateType.GLOBAL
-        )
+        if not isinstance(state, list):
+            return False
+        if len(state) != 1:
+            return False
+        state_message = state[0]
+        if not isinstance(state_message, AirbyteStateMessage):
+            return False
+        return state_message.type == AirbyteStateType.GLOBAL
 
     @staticmethod
     def _is_per_stream_state(
