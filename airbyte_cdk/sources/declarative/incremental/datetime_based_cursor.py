@@ -340,7 +340,35 @@ class DatetimeBasedCursor(DeclarativeCursor):
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> Mapping[str, Any]:
-        return self._get_request_options(RequestOptionType.header, stream_slice)
+        # Avoid function call overhead for main hotpath, inlining body since line profiling shows 100% of time here
+        options: MutableMapping[str, Any] = {}
+        if not stream_slice:
+            return options
+
+        # Evaluate .eval(self.config) only if option exists and inject_into matches
+        start_option = self.start_time_option
+        if start_option is not None and start_option.inject_into == RequestOptionType.header:
+            # Hot path: avoid attribute lookups and function indirections
+            part_start = self._partition_field_start
+            # Pre-compute eval(self.config) only once
+            if part_start._is_plain_string is not False:
+                key_name = part_start.eval(self.config)
+            else:
+                key_name = part_start.string
+            value = stream_slice.get(key_name)
+            start_option.inject_into_request(options, value, self.config)
+
+        end_option = self.end_time_option
+        if end_option is not None and end_option.inject_into == RequestOptionType.header:
+            part_end = self._partition_field_end
+            if part_end._is_plain_string is not False:
+                key_name = part_end.eval(self.config)
+            else:
+                key_name = part_end.string
+            value = stream_slice.get(key_name)
+            end_option.inject_into_request(options, value, self.config)
+
+        return options
 
     def get_request_body_data(
         self,
@@ -367,6 +395,7 @@ class DatetimeBasedCursor(DeclarativeCursor):
     def _get_request_options(
         self, option_type: RequestOptionType, stream_slice: Optional[StreamSlice]
     ) -> Mapping[str, Any]:
+        # This method is now just the shared utility, not hot, so keep as is (original logic)
         options: MutableMapping[str, Any] = {}
         if not stream_slice:
             return options
