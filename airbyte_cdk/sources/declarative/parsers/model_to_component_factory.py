@@ -1799,9 +1799,13 @@ class ModelToComponentFactory:
 
     @staticmethod
     def _extract_missing_parameters(error: TypeError) -> List[str]:
-        parameter_search = re.search(r"keyword-only.*:\s(.*)", str(error))
-        if parameter_search:
-            return re.findall(r"\'(.+?)\'", parameter_search.group(1))
+        # Use a single regular expression scan to directly extract parameter names.
+        # This replaces the previous double regex method for faster performance.
+        error_str = str(error)
+        match = re.search(r"keyword-only.*:\s(.+)", error_str)
+        if match:
+            # Will extract all single-quoted parameter names from the matched group.
+            return [m for m in re.findall(r"'([^']+)'", match.group(1))]
         else:
             return []
 
