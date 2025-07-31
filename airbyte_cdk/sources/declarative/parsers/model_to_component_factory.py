@@ -1222,11 +1222,15 @@ class ModelToComponentFactory:
     def create_concurrency_level(
         model: ConcurrencyLevelModel, config: Config, **kwargs: Any
     ) -> ConcurrencyLevel:
+        # Use local vars to avoid repeated attribute lookup
+        default_conc = model.default_concurrency
+        max_conc = model.max_concurrency
+        # Args are trivial, but this is best practice for optimized access for pydantic models
         return ConcurrencyLevel(
-            default_concurrency=model.default_concurrency,
-            max_concurrency=model.max_concurrency,
+            default_concurrency=default_conc,
+            max_concurrency=max_conc,
             config=config,
-            parameters={},
+            parameters={},  # avoid new dict for each call if possible, but this is likely intentional
         )
 
     @staticmethod
