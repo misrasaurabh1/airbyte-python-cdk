@@ -93,20 +93,22 @@ class ListPartitionRouter(PartitionRouter):
     def _get_request_option(
         self, request_option_type: RequestOptionType, stream_slice: Optional[StreamSlice]
     ) -> Mapping[str, Any]:
-        if (
+        # Inlined check and early return for efficiency
+        if not (
             self.request_option
             and self.request_option.inject_into == request_option_type
             and stream_slice
         ):
-            slice_value = stream_slice.get(self._cursor_field.eval(self.config))
-            if slice_value:
-                options: MutableMapping[str, Any] = {}
-                self.request_option.inject_into_request(options, slice_value, self.config)
-                return options
-            else:
-                return {}
-        else:
             return {}
+
+        cursor_field_value = self._cursor_field.eval(self.config)
+        slice_value = stream_slice.get(cursor_field_value)
+        if not slice_value:
+            return {}
+
+        options: MutableMapping[str, Any] = {}
+        self.request_option.inject_into_request(options, slice_value, self.config)
+        return options
 
     def set_initial_state(self, stream_state: StreamState) -> None:
         """
