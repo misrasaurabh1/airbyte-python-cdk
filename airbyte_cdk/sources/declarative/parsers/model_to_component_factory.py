@@ -2579,7 +2579,10 @@ class ModelToComponentFactory:
 
     @staticmethod
     def create_json_decoder(model: JsonDecoderModel, config: Config, **kwargs: Any) -> Decoder:
-        return JsonDecoder(parameters={})
+        # Cache the decoder instance since it's stateless and identical for all calls
+        if not hasattr(ModelToComponentFactory.create_json_decoder, "_instance"):
+            ModelToComponentFactory.create_json_decoder._instance = JsonDecoder(parameters={})
+        return ModelToComponentFactory.create_json_decoder._instance
 
     def create_csv_decoder(self, model: CsvDecoderModel, config: Config, **kwargs: Any) -> Decoder:
         return CompositeRawDecoder(
