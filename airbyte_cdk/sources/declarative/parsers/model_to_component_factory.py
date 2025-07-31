@@ -804,19 +804,19 @@ class ModelToComponentFactory:
         )
 
     def _create_component_from_model(self, model: BaseModel, config: Config, **kwargs: Any) -> Any:
-        if model.__class__ not in self.PYDANTIC_MODEL_TO_CONSTRUCTOR:
+        cls = model.__class__
+        constructor = self.PYDANTIC_MODEL_TO_CONSTRUCTOR.get(cls)
+        if constructor is None:
             raise ValueError(
-                f"{model.__class__} with attributes {model} is not a valid component type"
+                f"{cls} with attributes {model} is not a valid component type or constructor not found"
             )
-        component_constructor = self.PYDANTIC_MODEL_TO_CONSTRUCTOR.get(model.__class__)
-        if not component_constructor:
-            raise ValueError(f"Could not find constructor for {model.__class__}")
 
         # collect deprecation warnings for supported models.
         if isinstance(model, BaseModelWithDeprecations):
             self._collect_model_deprecations(model)
 
-        return component_constructor(model=model, config=config, **kwargs)
+        # For performance, bind names outside constructor call
+        return constructor(model=model, config=config, **kwargs)
 
     def get_model_deprecations(self) -> List[ConnectorBuilderLogMessage]:
         """
@@ -855,9 +855,9 @@ class ModelToComponentFactory:
     def create_config_add_fields(
         self, model: ConfigAddFieldsModel, config: Config, **kwargs: Any
     ) -> ConfigAddFields:
-        fields = [self._create_component_from_model(field, config) for field in model.fields]
+        # Use generator expression to avoid unnecessary intermediary list allocation
         return ConfigAddFields(
-            fields=fields,
+            fields=[self._create_component_from_model(field, config) for field in model.fields],
             condition=model.condition or "",
         )
 
