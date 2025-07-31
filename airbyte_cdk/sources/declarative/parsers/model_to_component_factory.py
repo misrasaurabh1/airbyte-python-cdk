@@ -639,6 +639,7 @@ class ModelToComponentFactory:
         connector_state_manager: Optional[ConnectorStateManager] = None,
         max_concurrent_async_job_count: Optional[int] = None,
     ):
+        # Use local variables to avoid repeated attribute lookup
         self._init_mappings()
         self._limit_pages_fetched_per_slice = limit_pages_fetched_per_slice
         self._limit_slices_fetched = limit_slices_fetched
@@ -646,13 +647,23 @@ class ModelToComponentFactory:
         self._disable_retries = disable_retries
         self._disable_cache = disable_cache
         self._disable_resumable_full_refresh = disable_resumable_full_refresh
-        self._message_repository = message_repository or InMemoryMessageRepository(
-            self._evaluate_log_level(emit_connector_builder_messages)
-        )
-        self._connector_state_manager = connector_state_manager or ConnectorStateManager()
+
+        msg_repo = message_repository
+        if msg_repo is None:
+            level = self._evaluate_log_level(emit_connector_builder_messages)
+            msg_repo = InMemoryMessageRepository(level)
+        self._message_repository = msg_repo
+
+        conn_state_mgr = connector_state_manager or ConnectorStateManager()
+        self._connector_state_manager = conn_state_mgr
+
         self._api_budget: Optional[Union[APIBudget, HttpAPIBudget]] = None
-        self._job_tracker: JobTracker = JobTracker(max_concurrent_async_job_count or 1)
-        # placeholder for deprecation warnings
+
+        concurrent_jobs = (
+            max_concurrent_async_job_count if max_concurrent_async_job_count is not None else 1
+        )
+        self._job_tracker: JobTracker = JobTracker(concurrent_jobs)
+
         self._collected_deprecation_logs: List[ConnectorBuilderLogMessage] = []
 
     def _init_mappings(self) -> None:
