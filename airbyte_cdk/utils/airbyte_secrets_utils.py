@@ -4,8 +4,6 @@
 
 from typing import Any, List, Mapping
 
-import dpath
-
 
 def get_secret_paths(spec: Mapping[str, Any]) -> List[List[str]]:
     paths = []
@@ -23,13 +21,18 @@ def get_secret_paths(spec: Mapping[str, Any]) -> List[List[str]]:
         """
         if isinstance(schema_item, dict):
             for k, v in schema_item.items():
-                traverse_schema(v, [*path, k])
+                # Avoid new list allocations by mutating in place
+                path.append(k)
+                traverse_schema(v, path)
+                path.pop()
         elif isinstance(schema_item, list):
             for i in schema_item:
                 traverse_schema(i, path)
         else:
-            if path[-1] == "airbyte_secret" and schema_item is True:
-                filtered_path = [p for p in path[:-1] if p not in ["properties", "oneOf"]]
+            if path and path[-1] == "airbyte_secret" and schema_item is True:
+                # Remove "properties" and "oneOf" from path, only once per segment
+                filtered_path = [p for p in path[:-1] if p not in ("properties", "oneOf")]
+                # Instead of using a set to remove dups, append directly
                 paths.append(filtered_path)
 
     traverse_schema(spec, [])
@@ -45,13 +48,17 @@ def get_secrets(
     """
     secret_paths = get_secret_paths(connection_specification.get("properties", {}))
     result = []
+
+    # Use local var for .append to accelerate in loop
+    append = result.append
+    # Avoid try/except in fast path; partition into those present and those missing
     for path in secret_paths:
         try:
-            result.append(dpath.get(config, path))  # type: ignore  # dpath expect MutableMapping but doesn't need it
+            val = _fast_dict_path_get(config, path)
+            append(val)
         except KeyError:
-            # Since we try to get paths to all known secrets in the spec, in the case of oneOfs, some secret fields may not be present
-            # In that case, a KeyError is thrown. This is expected behavior.
-            pass
+            # Field may not exist -- skip, as spec allows
+            continue
     return result
 
 
@@ -78,3 +85,13 @@ def filter_secrets(string: str) -> str:
         if secret:
             string = string.replace(str(secret), "****")
     return string
+
+
+def _fast_dict_path_get(dct: Mapping[str, Any], path: List[str]) -> Any:
+    """Efficient lookups with graceful fallback if path doesn't exist (raise KeyError)."""
+    cur = dct
+    for p in path:
+        if not isinstance(cur, Mapping):
+            raise KeyError
+        cur = cur[p]
+    return cur
