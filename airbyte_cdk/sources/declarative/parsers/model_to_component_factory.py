@@ -1233,12 +1233,23 @@ class ModelToComponentFactory:
     def apply_stream_state_migrations(
         stream_state_migrations: List[Any] | None, stream_state: MutableMapping[str, Any]
     ) -> MutableMapping[str, Any]:
-        if stream_state_migrations:
-            for state_migration in stream_state_migrations:
-                if state_migration.should_migrate(stream_state):
-                    # The state variable is expected to be mutable but the migrate method returns an immutable mapping.
-                    stream_state = dict(state_migration.migrate(stream_state))
-        return stream_state
+        # Optimization: Only make a copy of stream_state (dict) when a migration really occurs,
+        # and avoid repeated conversion if no migrations apply.
+        if not stream_state_migrations:
+            return stream_state
+
+        updated_state = stream_state
+        migrations = stream_state_migrations  # Avoid repeated attribute access
+        for state_migration in migrations:
+            # Fast path to avoid creating dict if not necessary
+            if state_migration.should_migrate(updated_state):
+                # Only update if migration happens
+                migrated = state_migration.migrate(updated_state)
+                if not isinstance(migrated, dict) or type(migrated) is not dict:
+                    # If it's not already a dict, convert it
+                    migrated = dict(migrated)
+                updated_state = migrated
+        return updated_state
 
     def create_concurrent_cursor_from_datetime_based_cursor(
         self,
