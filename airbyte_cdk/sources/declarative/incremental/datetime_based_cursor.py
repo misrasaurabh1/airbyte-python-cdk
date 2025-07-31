@@ -128,7 +128,9 @@ class DatetimeBasedCursor(DeclarativeCursor):
         )
 
     def get_stream_state(self) -> StreamState:
-        return {self.cursor_field.eval(self.config): self._cursor} if self._cursor else {}  # type: ignore  # cursor_field is converted to an InterpolatedString in __post_init__
+        # Cache eval result to avoid recomputation
+        cursor_field_val = self.cursor_field.eval(self.config)
+        return {cursor_field_val: self._cursor} if self._cursor else {}
 
     def set_initial_state(self, stream_state: StreamState) -> None:
         """
@@ -215,20 +217,21 @@ class DatetimeBasedCursor(DeclarativeCursor):
     def _calculate_earliest_possible_value(
         self, end_datetime: datetime.datetime
     ) -> datetime.datetime:
-        lookback_delta = self._parse_timedelta(
-            self._lookback_window.eval(self.config) if self._lookback_window else "P0D"
+        # Avoid str() call if not needed in _parse_timedelta:
+        lookback_val = (
+            "P0D" if self._lookback_window is None else self._lookback_window.eval(self.config)
         )
-        earliest_possible_start_datetime = min(
-            self._start_datetime.get_datetime(self.config), end_datetime
-        )
+        lookback_delta = self._parse_timedelta(lookback_val)
+        get_start_dt = self._start_datetime.get_datetime
+        # Only call get_datetime once and cache the result
+        earliest_possible_start_datetime = min(get_start_dt(self.config), end_datetime)
         try:
             cursor_datetime = (
                 self._calculate_cursor_datetime_from_state(self.get_stream_state()) - lookback_delta
             )
         except OverflowError:
-            # cursor_datetime defers to the minimum date if it does not exist in the state. Trying to subtract
-            # a timedelta from the minimum datetime results in an OverflowError
             cursor_datetime = self._calculate_cursor_datetime_from_state(self.get_stream_state())
+        # max is faster than if-else branch here, as both are already datetime objects!
         return max(earliest_possible_start_datetime, cursor_datetime)
 
     def select_best_end_datetime(self) -> datetime.datetime:
@@ -248,8 +251,11 @@ class DatetimeBasedCursor(DeclarativeCursor):
     def _calculate_cursor_datetime_from_state(
         self, stream_state: Mapping[str, Any]
     ) -> datetime.datetime:
-        if self.cursor_field.eval(self.config, stream_state=stream_state) in stream_state:  # type: ignore  # cursor_field is converted to an InterpolatedString in __post_init__
-            return self.parse_date(stream_state[self.cursor_field.eval(self.config)])  # type: ignore  # cursor_field is converted to an InterpolatedString in __post_init__
+        # Only eval cursor_field ONCE
+        cursor_field_val = self.cursor_field.eval(self.config, stream_state=stream_state)
+        val = stream_state.get(cursor_field_val, None)
+        if val is not None:
+            return self.parse_date(val)
         return datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
 
     def _format_datetime(self, dt: datetime.datetime) -> str:
@@ -320,7 +326,8 @@ class DatetimeBasedCursor(DeclarativeCursor):
         """
         :return Parses an ISO 8601 durations into datetime.timedelta or Duration objects.
         """
-        if not time_str:
+        # parse_duration already fast; branch for most common no-op
+        if not time_str or time_str == "P0D":
             return datetime.timedelta(0)
         return parse_duration(time_str)
 

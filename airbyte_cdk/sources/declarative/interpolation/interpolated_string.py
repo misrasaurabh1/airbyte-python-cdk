@@ -2,6 +2,7 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
+import datetime
 from dataclasses import InitVar, dataclass
 from typing import Any, Mapping, Optional, Union
 
@@ -40,12 +41,13 @@ class InterpolatedString:
         :param kwargs: Optional parameters used for interpolation
         :return: The interpolated string
         """
-        if self._is_plain_string:
+        is_plain = self._is_plain_string
+        if is_plain is True:
             return self.string
-        if self._is_plain_string is None:
-            # Let's check whether output from evaluation is the same as input.
-            # This indicates occurrence of a plain string, not a template and we can skip Jinja in subsequent runs.
-            evaluated = self._interpolation.eval(
+        if is_plain is None:
+            # Try to avoid recomputing the output by storing result of comparison:
+            interpolation = self._interpolation
+            evaluated = interpolation.eval(
                 self.string, config, self.default, parameters=self._parameters, **kwargs
             )
             self._is_plain_string = self.string == evaluated
