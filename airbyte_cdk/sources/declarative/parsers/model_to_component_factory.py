@@ -2194,10 +2194,7 @@ class ModelToComponentFactory:
         ],
         stream_slicer: Optional[PartitionRouter],
     ) -> Optional[StreamSlicer]:
-        if hasattr(model, "paginator") and model.paginator and not stream_slicer:
-            # For the regular Full-Refresh streams, we use the high level `ResumableFullRefreshCursor`
-            return ResumableFullRefreshCursor(parameters={})
-        elif stream_slicer:
+        if stream_slicer:
             # For the Full-Refresh sub-streams, we use the nested `ChildPartitionResumableFullRefreshCursor`
             return PerPartitionCursor(
                 cursor_factory=CursorFactory(
@@ -2205,6 +2202,9 @@ class ModelToComponentFactory:
                 ),
                 partition_router=stream_slicer,
             )
+        elif getattr(model, "paginator", None):
+            # For the regular Full-Refresh streams, we use the high level `ResumableFullRefreshCursor`
+            return ResumableFullRefreshCursor(parameters={})
         return None
 
     def _merge_stream_slicers(
