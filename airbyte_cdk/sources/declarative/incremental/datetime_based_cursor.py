@@ -248,8 +248,10 @@ class DatetimeBasedCursor(DeclarativeCursor):
     def _calculate_cursor_datetime_from_state(
         self, stream_state: Mapping[str, Any]
     ) -> datetime.datetime:
-        if self.cursor_field.eval(self.config, stream_state=stream_state) in stream_state:  # type: ignore  # cursor_field is converted to an InterpolatedString in __post_init__
-            return self.parse_date(stream_state[self.cursor_field.eval(self.config)])  # type: ignore  # cursor_field is converted to an InterpolatedString in __post_init__
+        # Evaluate cursor key only once
+        cursor_key = self.cursor_field.eval(self.config, stream_state=stream_state)  # type: ignore
+        if cursor_key in stream_state:
+            return self.parse_date(stream_state[cursor_key])  # type: ignore
         return datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
 
     def _format_datetime(self, dt: datetime.datetime) -> str:
