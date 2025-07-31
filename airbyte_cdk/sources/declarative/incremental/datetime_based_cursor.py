@@ -2,6 +2,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+from __future__ import annotations
+
 import datetime
 from dataclasses import InitVar, dataclass, field
 from datetime import timedelta
@@ -149,24 +151,95 @@ class DatetimeBasedCursor(DeclarativeCursor):
         :param record: the most recently-read record, which the cursor can use to update the stream state. Outwardly-visible changes to the
           stream state may need to be deferred depending on whether the source reliably orders records by the cursor field.
         """
-        record_cursor_value = record.get(self.cursor_field.eval(self.config))  # type: ignore  # cursor_field is converted to an InterpolatedString in __post_init__
-        # if the current record has no cursor value, we cannot meaningfully update the state based on it, so there is nothing more to do
+        cursor_field = self.cursor_field
+        config = self.config
+
+        # Avoid repeated calls to InterpolatedString.eval for cursor field name
+        if cursor_field._is_plain_string:
+            cfield_eval = cursor_field.string
+        elif cursor_field._is_plain_string is None:
+            cfield_eval = cursor_field.eval(config)
+        else:
+            # is_plain_string is False, always evaluate (may contain jinja)
+            cfield_eval = cursor_field.eval(config)
+
+        record_cursor_value = record.get(cfield_eval)
         if not record_cursor_value:
             return
 
-        start_field = self._partition_field_start.eval(self.config)
-        end_field = self._partition_field_end.eval(self.config)
-        is_highest_observed_cursor_value = (
-            not self._highest_observed_cursor_field_value
-            or self.parse_date(record_cursor_value)
-            > self.parse_date(self._highest_observed_cursor_field_value)
-        )
+        # Avoid repeated eval calls for partition fields (also used in _is_within_daterange_boundaries)
+        pf_start_obj = self._partition_field_start
+        pf_end_obj = self._partition_field_end
+
+        pf_start_field: str
+        pf_end_field: str
+
+        if pf_start_obj._is_plain_string:
+            pf_start_field = pf_start_obj.string
+        elif pf_start_obj._is_plain_string is None:
+            pf_start_field = pf_start_obj.eval(config)
+        else:
+            pf_start_field = pf_start_obj.eval(config)
+
+        if pf_end_obj._is_plain_string:
+            pf_end_field = pf_end_obj.string
+        elif pf_end_obj._is_plain_string is None:
+            pf_end_field = pf_end_obj.eval(config)
+        else:
+            pf_end_field = pf_end_obj.eval(config)
+
+        # parse_date can be expensive, avoid repeated work and attribute lookups
+        highest = self._highest_observed_cursor_field_value
+        pd = self.parse_date
+
+        # is this the highest (newest/latest) value we've seen?
+        if not highest:
+            is_highest_observed_cursor_value = True
+        else:
+            cur_val_dt = pd(record_cursor_value)
+            high_val_dt = pd(highest)
+            is_highest_observed_cursor_value = cur_val_dt > high_val_dt
+
+        # Only evaluate _is_within_daterange_boundaries if necessary, uses above cached field names
+        # Avoid any duplicate InterpolatedString.eval or parse
+        def boundaries_within(record, pf_start, pf_end):
+            # Inline of _is_within_daterange_boundaries to share cached field names and parsed cursor values
+            cfield = cfield_eval
+            rcv = record_cursor_value
+            if not rcv:
+                self._send_log(
+                    Level.WARN,
+                    f"Could not find cursor field `{cfield}` in record. The record will not be considered when emitting sync state",
+                )
+                return False
+
+            start_d = stream_slice.get(pf_start)
+            end_d = stream_slice.get(pf_end)
+
+            # Avoid attribute lookups for parse_date in this inner scope
+            pd_func = pd
+
+            if isinstance(start_d, str):
+                try:
+                    start_d = pd_func(start_d)
+                except Exception:
+                    return False
+            if isinstance(end_d, str):
+                try:
+                    end_d = pd_func(end_d)
+                except Exception:
+                    return False
+
+            # Use above-parsed record cursor value (already parsed if possible for highest check)
+            try:
+                rcv_dt = cur_val_dt if highest else pd_func(rcv)
+            except Exception:
+                # Rare edge case, fallback parse
+                rcv_dt = pd_func(rcv)
+            return start_d <= rcv_dt <= end_d
+
         if (
-            self._is_within_daterange_boundaries(
-                record,
-                stream_slice.get(start_field),  # type: ignore [arg-type]
-                stream_slice.get(end_field),  # type: ignore [arg-type]
-            )
+            boundaries_within(record, pf_start_field, pf_end_field)
             and is_highest_observed_cursor_value
         ):
             self._highest_observed_cursor_field_value = record_cursor_value
