@@ -83,10 +83,9 @@ class ListPartitionRouter(PartitionRouter):
         return self._get_request_option(RequestOptionType.body_json, stream_slice)
 
     def stream_slices(self) -> Iterable[StreamSlice]:
+        cursor_key = self._cursor_field.eval(self.config)
         return [
-            StreamSlice(
-                partition={self._cursor_field.eval(self.config): slice_value}, cursor_slice={}
-            )
+            StreamSlice(partition={cursor_key: slice_value}, cursor_slice={})
             for slice_value in self.values
         ]
 
