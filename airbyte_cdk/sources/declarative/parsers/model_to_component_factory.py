@@ -903,9 +903,8 @@ class ModelToComponentFactory:
     def create_validate_adheres_to_schema(
         model: ValidateAdheresToSchemaModel, config: Config, **kwargs: Any
     ) -> ValidateAdheresToSchema:
-        base_schema = cast(Mapping[str, Any], model.base_schema)
         return ValidateAdheresToSchema(
-            schema=base_schema,
+            schema=model.base_schema,
         )
 
     @staticmethod
