@@ -992,13 +992,7 @@ class ModelToComponentFactory:
     def _json_schema_type_name_to_type(value_type: Optional[ValueType]) -> Optional[Type[Any]]:
         if not value_type:
             return None
-        names_to_types = {
-            ValueType.string: str,
-            ValueType.number: float,
-            ValueType.integer: int,
-            ValueType.boolean: bool,
-        }
-        return names_to_types[value_type]
+        return _JSON_SCHEMA_TYPE_NAME_TO_TYPE.get(value_type)
 
     def create_api_key_authenticator(
         self,
@@ -4087,3 +4081,11 @@ class ModelToComponentFactory:
             deduplicate=model.deduplicate if model.deduplicate is not None else True,
             config=config,
         )
+
+
+_JSON_SCHEMA_TYPE_NAME_TO_TYPE = {
+    ValueType.string: str,
+    ValueType.number: float,
+    ValueType.integer: int,
+    ValueType.boolean: bool,
+}
