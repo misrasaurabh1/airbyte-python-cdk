@@ -1856,7 +1856,12 @@ class ModelToComponentFactory:
 
     @staticmethod
     def _is_component(model_value: Any) -> bool:
-        return isinstance(model_value, dict) and model_value.get("type") is not None
+        # Fast-path for non-dict to avoid unnecessary checks (isinstance is relatively expensive).
+        if type(model_value) is not dict:
+            return False
+        # Direct lookup and null check in as few operations as possible
+        t = model_value.get("type")
+        return t is not None
 
     def create_datetime_based_cursor(
         self, model: DatetimeBasedCursorModel, config: Config, **kwargs: Any
