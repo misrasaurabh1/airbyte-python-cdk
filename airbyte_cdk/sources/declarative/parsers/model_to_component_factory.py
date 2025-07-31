@@ -4045,11 +4045,11 @@ class ModelToComponentFactory:
         self, model: HttpRequestRegexMatcherModel, config: Config, **kwargs: Any
     ) -> HttpRequestRegexMatcher:
         return HttpRequestRegexMatcher(
-            method=model.method,
-            url_base=model.url_base,
-            url_path_pattern=model.url_path_pattern,
-            params=model.params,
-            headers=model.headers,
+            model.method,
+            model.url_base,
+            model.url_path_pattern,
+            model.params,
+            model.headers,
         )
 
     def set_api_budget(self, component_definition: ComponentDefinition, config: Config) -> None:
