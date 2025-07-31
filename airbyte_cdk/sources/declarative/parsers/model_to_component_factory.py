@@ -642,12 +642,13 @@ class ModelToComponentFactory:
         self._init_mappings()
         self._limit_pages_fetched_per_slice = limit_pages_fetched_per_slice
         self._limit_slices_fetched = limit_slices_fetched
-        self._emit_connector_builder_messages = emit_connector_builder_messages
+        emit_cb_messages = emit_connector_builder_messages  # cached local for repeated use
+        self._emit_connector_builder_messages = emit_cb_messages
         self._disable_retries = disable_retries
         self._disable_cache = disable_cache
         self._disable_resumable_full_refresh = disable_resumable_full_refresh
         self._message_repository = message_repository or InMemoryMessageRepository(
-            self._evaluate_log_level(emit_connector_builder_messages)
+            self._evaluate_log_level(emit_cb_messages)
         )
         self._connector_state_manager = connector_state_manager or ConnectorStateManager()
         self._api_budget: Optional[Union[APIBudget, HttpAPIBudget]] = None
@@ -3124,17 +3125,29 @@ class ModelToComponentFactory:
     def create_legacy_session_token_authenticator(
         model: LegacySessionTokenAuthenticatorModel, config: Config, *, url_base: str, **kwargs: Any
     ) -> LegacySessionTokenAuthenticator:
+        # Cache model attribute access for improved speed
+        _header = model.header
+        _login_url = model.login_url
+        _password = model.password
+        _session_token = model.session_token
+        _session_token_response_key = model.session_token_response_key
+        _username = model.username
+        _validate_session_url = model.validate_session_url
+        _parameters = model.parameters
+
         return LegacySessionTokenAuthenticator(
             api_url=url_base,
-            header=model.header,
-            login_url=model.login_url,
-            password=model.password or "",
-            session_token=model.session_token or "",
-            session_token_response_key=model.session_token_response_key or "",
-            username=model.username or "",
-            validate_session_url=model.validate_session_url,
+            header=_header,
+            login_url=_login_url,
+            password=_password if _password is not None else "",
+            session_token=_session_token if _session_token is not None else "",
+            session_token_response_key=_session_token_response_key
+            if _session_token_response_key is not None
+            else "",
+            username=_username if _username is not None else "",
+            validate_session_url=_validate_session_url,
             config=config,
-            parameters=model.parameters or {},
+            parameters=_parameters if _parameters is not None else {},
         )
 
     def create_simple_retriever(
