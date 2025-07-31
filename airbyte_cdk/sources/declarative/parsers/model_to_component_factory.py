@@ -3757,14 +3757,16 @@ class ModelToComponentFactory:
     def create_wait_time_from_header(
         model: WaitTimeFromHeaderModel, config: Config, **kwargs: Any
     ) -> WaitTimeFromHeaderBackoffStrategy:
+        # Micro-optimize attribute access (Python 3.7+)
+        max_waiting = model.max_waiting_time_in_seconds
+        parameters = model.parameters if model.parameters is not None else {}
+
         return WaitTimeFromHeaderBackoffStrategy(
             header=model.header,
-            parameters=model.parameters or {},
+            parameters=parameters,
             config=config,
             regex=model.regex,
-            max_waiting_time_in_seconds=model.max_waiting_time_in_seconds
-            if model.max_waiting_time_in_seconds is not None
-            else None,
+            max_waiting_time_in_seconds=max_waiting,
         )
 
     @staticmethod
