@@ -804,17 +804,18 @@ class ModelToComponentFactory:
         )
 
     def _create_component_from_model(self, model: BaseModel, config: Config, **kwargs: Any) -> Any:
-        if model.__class__ not in self.PYDANTIC_MODEL_TO_CONSTRUCTOR:
-            raise ValueError(
-                f"{model.__class__} with attributes {model} is not a valid component type"
-            )
-        component_constructor = self.PYDANTIC_MODEL_TO_CONSTRUCTOR.get(model.__class__)
-        if not component_constructor:
-            raise ValueError(f"Could not find constructor for {model.__class__}")
-
-        # collect deprecation warnings for supported models.
-        if isinstance(model, BaseModelWithDeprecations):
-            self._collect_model_deprecations(model)
+        cls = model.__class__
+        component_constructor = self.PYDANTIC_MODEL_TO_CONSTRUCTOR.get(cls, None)
+        if component_constructor is None:
+            raise ValueError(f"{cls} with attributes {model} is not a valid component type")
+        # Inline attribute check instead of isinstance for slightly faster deprecation collection
+        if (
+            hasattr(model, DEPRECATION_LOGS_TAG)
+            and getattr(model, "_deprecation_logs", None) is not None
+        ):
+            for log in model._deprecation_logs:
+                if log not in self._collected_deprecation_logs:
+                    self._collected_deprecation_logs.append(log)
 
         return component_constructor(model=model, config=config, **kwargs)
 
@@ -1215,7 +1216,7 @@ class ModelToComponentFactory:
             for error_handler_model in model.error_handlers
         ]
         return CompositeErrorHandler(
-            error_handlers=error_handlers, parameters=model.parameters or {}
+            error_handlers=error_handlers, parameters=model.parameters if model.parameters else {}
         )
 
     @staticmethod
