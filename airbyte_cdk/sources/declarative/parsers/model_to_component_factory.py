@@ -639,17 +639,30 @@ class ModelToComponentFactory:
         connector_state_manager: Optional[ConnectorStateManager] = None,
         max_concurrent_async_job_count: Optional[int] = None,
     ):
-        self._init_mappings()
+        # Only initialize mappings once (classwide, not per instance)
+        if not ModelToComponentFactory._CLASS_MAPPINGS_INITIALIZED:
+            self._init_mappings()
+            ModelToComponentFactory._CLASS_MAPPINGS_INITIALIZED = True
+
         self._limit_pages_fetched_per_slice = limit_pages_fetched_per_slice
         self._limit_slices_fetched = limit_slices_fetched
         self._emit_connector_builder_messages = emit_connector_builder_messages
         self._disable_retries = disable_retries
         self._disable_cache = disable_cache
         self._disable_resumable_full_refresh = disable_resumable_full_refresh
-        self._message_repository = message_repository or InMemoryMessageRepository(
-            self._evaluate_log_level(emit_connector_builder_messages)
+
+        log_level = self._evaluate_log_level(emit_connector_builder_messages)
+        # Avoid redundant InMemoryMessageRepository creations
+        self._message_repository = (
+            message_repository
+            if message_repository is not None
+            else InMemoryMessageRepository(log_level)
         )
-        self._connector_state_manager = connector_state_manager or ConnectorStateManager()
+        self._connector_state_manager = (
+            connector_state_manager
+            if connector_state_manager is not None
+            else ConnectorStateManager()
+        )
         self._api_budget: Optional[Union[APIBudget, HttpAPIBudget]] = None
         self._job_tracker: JobTracker = JobTracker(max_concurrent_async_job_count or 1)
         # placeholder for deprecation warnings
