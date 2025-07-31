@@ -63,7 +63,7 @@ class ConnectorStateManager:
             HashableStreamDescriptor(name=stream_name, namespace=namespace)
         )
         if stream_state:
-            return copy.deepcopy({k: v for k, v in stream_state.__dict__.items()})
+            return stream_state.__dict__.copy()
         return {}
 
     def update_state_for_stream(
