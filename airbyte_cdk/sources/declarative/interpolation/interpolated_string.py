@@ -2,6 +2,8 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
+from __future__ import annotations
+
 from dataclasses import InitVar, dataclass
 from typing import Any, Mapping, Optional, Union
 
@@ -43,6 +45,10 @@ class InterpolatedString:
         if self._is_plain_string:
             return self.string
         if self._is_plain_string is None:
+            # Fast plain string heuristic: if no jinja tokens, it's plain string
+            if "{{" not in self.string and "}}" not in self.string:
+                self._is_plain_string = True
+                return self.string
             # Let's check whether output from evaluation is the same as input.
             # This indicates occurrence of a plain string, not a template and we can skip Jinja in subsequent runs.
             evaluated = self._interpolation.eval(
