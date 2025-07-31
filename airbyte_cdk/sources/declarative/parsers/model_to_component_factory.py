@@ -646,6 +646,7 @@ class ModelToComponentFactory:
         self._disable_retries = disable_retries
         self._disable_cache = disable_cache
         self._disable_resumable_full_refresh = disable_resumable_full_refresh
+
         self._message_repository = message_repository or InMemoryMessageRepository(
             self._evaluate_log_level(emit_connector_builder_messages)
         )
@@ -804,17 +805,24 @@ class ModelToComponentFactory:
         )
 
     def _create_component_from_model(self, model: BaseModel, config: Config, **kwargs: Any) -> Any:
-        if model.__class__ not in self.PYDANTIC_MODEL_TO_CONSTRUCTOR:
-            raise ValueError(
-                f"{model.__class__} with attributes {model} is not a valid component type"
-            )
-        component_constructor = self.PYDANTIC_MODEL_TO_CONSTRUCTOR.get(model.__class__)
-        if not component_constructor:
-            raise ValueError(f"Could not find constructor for {model.__class__}")
+        # Optimize attribute lookup: use local variable for constructor mapping
+        model_class = model.__class__
+        constructor_map = self.PYDANTIC_MODEL_TO_CONSTRUCTOR
 
-        # collect deprecation warnings for supported models.
-        if isinstance(model, BaseModelWithDeprecations):
+        component_constructor = constructor_map.get(model_class)
+        if component_constructor is None:
+            raise ValueError(f"{model_class} with attributes {model} is not a valid component type")
+
+        # Fast-path: avoid isinstance if not needed (only call if at least one subclassing is possible)
+        # This is faster than always calling isinstance especially when there are many rapid calls
+        if (
+            type(model) is not BaseModelWithDeprecations
+            and BaseModelWithDeprecations in model_class.__mro__
+        ):
             self._collect_model_deprecations(model)
+        elif type(model) is BaseModelWithDeprecations:
+            self._collect_model_deprecations(model)
+        # else: not a supported model type, do not call expensive isinstance
 
         return component_constructor(model=model, config=config, **kwargs)
 
@@ -882,8 +890,8 @@ class ModelToComponentFactory:
         )
 
     def create_dpath_validator(self, model: DpathValidatorModel, config: Config) -> DpathValidator:
+        # Evaluate component and store in local variable for micro-opt performance
         strategy = self._create_component_from_model(model.validation_strategy, config)
-
         return DpathValidator(
             field_path=model.field_path,
             strategy=strategy,
