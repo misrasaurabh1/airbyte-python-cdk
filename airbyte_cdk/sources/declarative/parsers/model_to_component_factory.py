@@ -646,12 +646,23 @@ class ModelToComponentFactory:
         self._disable_retries = disable_retries
         self._disable_cache = disable_cache
         self._disable_resumable_full_refresh = disable_resumable_full_refresh
-        self._message_repository = message_repository or InMemoryMessageRepository(
-            self._evaluate_log_level(emit_connector_builder_messages)
+        # Use inline assignment to avoid double attribute lookup
+        self._message_repository = (
+            message_repository
+            if message_repository is not None
+            else InMemoryMessageRepository(
+                self._evaluate_log_level(emit_connector_builder_messages)
+            )
         )
-        self._connector_state_manager = connector_state_manager or ConnectorStateManager()
+        self._connector_state_manager = (
+            connector_state_manager
+            if connector_state_manager is not None
+            else ConnectorStateManager()
+        )
         self._api_budget: Optional[Union[APIBudget, HttpAPIBudget]] = None
-        self._job_tracker: JobTracker = JobTracker(max_concurrent_async_job_count or 1)
+        self._job_tracker: JobTracker = JobTracker(
+            1 if max_concurrent_async_job_count is None else max_concurrent_async_job_count
+        )
         # placeholder for deprecation warnings
         self._collected_deprecation_logs: List[ConnectorBuilderLogMessage] = []
 
@@ -2740,7 +2751,12 @@ class ModelToComponentFactory:
 
     @staticmethod
     def create_no_auth(model: NoAuthModel, config: Config, **kwargs: Any) -> NoAuth:
-        return NoAuth(parameters=model.parameters or {})
+        # Fast path for parameters - saves an extra dict allocation if not needed
+        params = getattr(model, "parameters", None)
+        if params:
+            return NoAuth(parameters=params)
+        # fallback for empty/None
+        return NoAuth(parameters={})
 
     @staticmethod
     def create_no_pagination(
