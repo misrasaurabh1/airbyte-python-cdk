@@ -41,9 +41,9 @@ def _get_migration_class(module: ModuleType) -> Type[ManifestMigration]:
     """
     Returns the ManifestMigration subclass defined in the module.
     """
-    for _, obj in inspect.getmembers(module, inspect.isclass):
-        if issubclass(obj, ManifestMigration):
-            return obj
+    for cls in ManifestMigration.__subclasses__():
+        if cls.__module__ == module.__name__:
+            return cls
 
     raise ImportError(f"No ManifestMigration subclass found in module {module.__name__}.")
 
