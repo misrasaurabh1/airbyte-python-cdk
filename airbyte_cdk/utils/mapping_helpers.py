@@ -3,7 +3,6 @@
 #
 
 
-import copy
 from typing import Any, Dict, List, Mapping, Optional, Union
 
 from airbyte_cdk.sources.declarative.requesters.request_option import (
@@ -52,7 +51,10 @@ def _merge_mappings(
                 )
         else:
             # No conflict, just copy the value (using deepcopy for nested structures)
-            target[key] = copy.deepcopy(source_value)
+            if isinstance(source_value, (dict, list)):
+                target[key] = _fast_deepcopy(source_value)
+            else:
+                target[key] = source_value
 
 
 def combine_mappings(
@@ -89,27 +91,28 @@ def combine_mappings(
     if not mappings:
         return {}
 
-    # Count how many string options we have, ignoring None values
-    string_options = sum(isinstance(mapping, str) for mapping in mappings if mapping is not None)
-    if string_options > 1:
+    # Preallocate to avoid recomputing isinstance in comprehensions
+    n_string = 0
+    string_mapping = None
+    non_empty_mappings = []
+    for m in mappings:
+        if m is None:
+            continue
+        if isinstance(m, str):
+            n_string += 1
+            string_mapping = m
+        elif isinstance(m, Mapping) and m:
+            non_empty_mappings.append(m)
+    if n_string > 1:
         raise ValueError("Cannot combine multiple string options")
-
-    # Filter out None values and empty mappings
-    non_empty_mappings = [
-        m for m in mappings if m is not None and not (isinstance(m, Mapping) and not m)
-    ]
-
-    # If there is only one string option and no other non-empty mappings, return it
-    if string_options == 1:
-        if len(non_empty_mappings) > 1:
+    if n_string == 1:
+        if non_empty_mappings:
             raise ValueError("Cannot combine multiple options if one is a string")
-        return next(m for m in non_empty_mappings if isinstance(m, str))
+        return string_mapping
 
-    # Start with an empty result and merge each mapping into it
     result: Dict[str, Any] = {}
     for mapping in non_empty_mappings:
-        if mapping and isinstance(mapping, Mapping):
-            _merge_mappings(result, mapping, allow_same_value_merge=allow_same_value_merge)
+        _merge_mappings(result, mapping, allow_same_value_merge=allow_same_value_merge)
 
     return result
 
@@ -160,3 +163,11 @@ def get_interpolation_context(
             else {}
         ),
     }
+
+
+def _fast_deepcopy(obj):
+    if isinstance(obj, dict):
+        return {k: _fast_deepcopy(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_fast_deepcopy(v) for v in obj]
+    return obj
