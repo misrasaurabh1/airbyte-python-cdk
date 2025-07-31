@@ -804,18 +804,15 @@ class ModelToComponentFactory:
         )
 
     def _create_component_from_model(self, model: BaseModel, config: Config, **kwargs: Any) -> Any:
-        if model.__class__ not in self.PYDANTIC_MODEL_TO_CONSTRUCTOR:
-            raise ValueError(
-                f"{model.__class__} with attributes {model} is not a valid component type"
-            )
-        component_constructor = self.PYDANTIC_MODEL_TO_CONSTRUCTOR.get(model.__class__)
-        if not component_constructor:
-            raise ValueError(f"Could not find constructor for {model.__class__}")
-
+        model_cls = type(model)
+        try:
+            component_constructor = self.PYDANTIC_MODEL_TO_CONSTRUCTOR[model_cls]
+        except KeyError:
+            raise ValueError(f"{model_cls} with attributes {model} is not a valid component type")
         # collect deprecation warnings for supported models.
-        if isinstance(model, BaseModelWithDeprecations):
+        # isinstance(model, BaseModelWithDeprecations) optimized: only check if possible
+        if BaseModelWithDeprecations in model_cls.__mro__:
             self._collect_model_deprecations(model)
-
         return component_constructor(model=model, config=config, **kwargs)
 
     def get_model_deprecations(self) -> List[ConnectorBuilderLogMessage]:
@@ -2487,16 +2484,20 @@ class ModelToComponentFactory:
         return ComplexFieldType(field_type=model.field_type, items=items)
 
     def create_types_map(self, model: TypesMapModel, config: Config, **kwargs: Any) -> TypesMap:
-        target_type = (
-            self._create_component_from_model(model=model.target_type, config=config)
-            if isinstance(model.target_type, ComplexFieldTypeModel)
-            else model.target_type
-        )
+        target_type_val = model.target_type
+        # Check for the most common/fast path first to reduce isinstance calls
+        if type(target_type_val) is ComplexFieldTypeModel or isinstance(
+            target_type_val, ComplexFieldTypeModel
+        ):
+            target_type = self._create_component_from_model(model=target_type_val, config=config)
+        else:
+            target_type = target_type_val
 
+        cond = model.condition
         return TypesMap(
             target_type=target_type,
             current_type=model.current_type,
-            condition=model.condition if model.condition is not None else "True",
+            condition="True" if cond is None else cond,
         )
 
     def create_schema_type_identifier(
