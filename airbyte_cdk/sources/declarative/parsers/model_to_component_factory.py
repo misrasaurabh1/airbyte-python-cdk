@@ -804,19 +804,15 @@ class ModelToComponentFactory:
         )
 
     def _create_component_from_model(self, model: BaseModel, config: Config, **kwargs: Any) -> Any:
-        if model.__class__ not in self.PYDANTIC_MODEL_TO_CONSTRUCTOR:
-            raise ValueError(
-                f"{model.__class__} with attributes {model} is not a valid component type"
-            )
-        component_constructor = self.PYDANTIC_MODEL_TO_CONSTRUCTOR.get(model.__class__)
-        if not component_constructor:
-            raise ValueError(f"Could not find constructor for {model.__class__}")
-
-        # collect deprecation warnings for supported models.
+        model_cls = model.__class__
+        constructor = self.PYDANTIC_MODEL_TO_CONSTRUCTOR.get(model_cls)
+        if constructor is None:
+            raise ValueError(f"{model_cls} with attributes {model} is not a valid component type")
+        # collect deprecation warnings for supported models, only when needed.
         if isinstance(model, BaseModelWithDeprecations):
             self._collect_model_deprecations(model)
-
-        return component_constructor(model=model, config=config, **kwargs)
+        # most of the time is spent inside the constructor itself.
+        return constructor(model=model, config=config, **kwargs)
 
     def get_model_deprecations(self) -> List[ConnectorBuilderLogMessage]:
         """
@@ -2502,22 +2498,27 @@ class ModelToComponentFactory:
     def create_schema_type_identifier(
         self, model: SchemaTypeIdentifierModel, config: Config, **kwargs: Any
     ) -> SchemaTypeIdentifier:
-        types_mapping = []
-        if model.types_mapping:
-            types_mapping.extend(
-                [
-                    self._create_component_from_model(types_map, config=config)
-                    for types_map in model.types_mapping
-                ]
-            )
-        model_schema_pointer: List[Union[InterpolatedString, str]] = (
-            [x for x in model.schema_pointer] if model.schema_pointer else []
-        )
-        model_key_pointer: List[Union[InterpolatedString, str]] = [x for x in model.key_pointer]
-        model_type_pointer: Optional[List[Union[InterpolatedString, str]]] = (
-            [x for x in model.type_pointer] if model.type_pointer else None
+        # Avoid unnecessary list copying.
+        types_mapping = (
+            [
+                self._create_component_from_model(types_map, config=config)
+                for types_map in model.types_mapping
+            ]
+            if getattr(model, "types_mapping", None)
+            else []
         )
 
+        # Direct reference or copy only if it avoids mutation problems; no need to re-create list if already present and won't be mutated downstream.
+        model_schema_pointer = (
+            list(model.schema_pointer) if getattr(model, "schema_pointer", None) else []
+        )
+        # This presumably must always exist, so no 'if'.
+        model_key_pointer = list(model.key_pointer)
+        model_type_pointer = (
+            list(model.type_pointer) if getattr(model, "type_pointer", None) else None
+        )
+
+        # parameters defaulting cheap since it's a dict.
         return SchemaTypeIdentifier(
             schema_pointer=model_schema_pointer,
             key_pointer=model_key_pointer,
