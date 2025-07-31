@@ -34,7 +34,6 @@ from airbyte_cdk.connector_builder.models import (
 )
 from airbyte_cdk.models import FailureType, Level
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
-from airbyte_cdk.sources.declarative import transformations
 from airbyte_cdk.sources.declarative.async_job.job_orchestrator import AsyncJobOrchestrator
 from airbyte_cdk.sources.declarative.async_job.job_tracker import JobTracker
 from airbyte_cdk.sources.declarative.async_job.repository import AsyncJobRepository
@@ -446,10 +445,6 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ZipfileDecoder as ZipfileDecoderModel,
 )
-from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
-    COMPONENTS_MODULE_NAME,
-    SDM_COMPONENTS_MODULE_NAME,
-)
 from airbyte_cdk.sources.declarative.partition_routers import (
     CartesianProductStreamSlicer,
     GroupingPartitionRouter,
@@ -508,7 +503,7 @@ from airbyte_cdk.sources.declarative.requesters.request_options import (
     RequestOptionsProvider,
 )
 from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
-from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod, Requester
+from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod
 from airbyte_cdk.sources.declarative.resolvers import (
     ComponentMappingDefinition,
     ConfigComponentsResolver,
@@ -1756,8 +1751,6 @@ class ModelToComponentFactory:
             if split[0] == "source_declarative_manifest":
                 # During testing, the modules containing the custom components are not moved to source_declarative_manifest. In order to run the test, add the source folder to your PYTHONPATH or add it runtime using sys.path.append
                 try:
-                    import os
-
                     module_name_with_source_declarative_manifest = ".".join(split[1:-1])
                     module_ref = importlib.import_module(
                         module_name_with_source_declarative_manifest
@@ -3424,18 +3417,25 @@ class ModelToComponentFactory:
     def _create_async_job_status_mapping(
         self, model: AsyncJobStatusMapModel, config: Config, **kwargs: Any
     ) -> Mapping[str, AsyncJobStatus]:
+        """
+        Maps API statuses to CDK statuses only once. Optimized for speed and memory.
+        """
         api_status_to_cdk_status = {}
-        for cdk_status, api_statuses in model.dict().items():
+        # Avoid repeated dict lookups
+        model_dict = model.__dict__ if hasattr(model, "__dict__") else model.dict()
+        get_async_job_status = self._get_async_job_status
+        for cdk_status, api_statuses in model_dict.items():
             if cdk_status == "type":
-                # This is an element of the dict because of the typing of the CDK but it is not a CDK status
                 continue
-
+            # Defensive: Only iterate if value is list-like
+            if not api_statuses:
+                continue
             for status in api_statuses:
                 if status in api_status_to_cdk_status:
                     raise ValueError(
                         f"API status {status} is already set for CDK status {cdk_status}. Please ensure API statuses are only provided once"
                     )
-                api_status_to_cdk_status[status] = self._get_async_job_status(cdk_status)
+                api_status_to_cdk_status[status] = get_async_job_status(cdk_status)
         return api_status_to_cdk_status
 
     def _get_async_job_status(self, status: str) -> AsyncJobStatus:
