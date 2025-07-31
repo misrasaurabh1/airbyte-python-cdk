@@ -28,11 +28,12 @@ def _find_migration_module(name: str) -> str:
     The name should match the file name of the migration module (without the .py extension).
     Raises ImportError if the module is not found.
     """
+    if not hasattr(_find_migration_module, "_migration_files"):
+        _find_migration_module._migration_files = set(os.listdir(MIGRATIONS_PATH))
 
-    for migration_file in os.listdir(MIGRATIONS_PATH):
-        migration_name = name + ".py"
-        if migration_file == migration_name:
-            return migration_file.replace(".py", "")
+    migration_name = name + ".py"
+    if migration_name in _find_migration_module._migration_files:
+        return migration_name.replace(".py", "")
 
     raise ImportError(f"Migration module '{name}' not found in {MIGRATIONS_PATH}.")
 
