@@ -4,6 +4,7 @@
 
 import copy
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any, List, Mapping, MutableMapping, Optional, Tuple, Union, cast
 
 from airbyte_cdk.models import (
@@ -35,7 +36,7 @@ class ConnectorStateManager:
     interface. It also provides methods to extract and update state
     """
 
-    def __init__(self, state: Optional[List[AirbyteStateMessage]] = None):
+    def __init__(self, state: Optional[List["AirbyteStateMessage"]] = None):
         shared_state, per_stream_states = self._extract_from_state_message(state)
 
         # We explicitly throw an error if we receive a GLOBAL state message that contains a shared_state because API sources are
@@ -85,15 +86,15 @@ class ConnectorStateManager:
         :param namespace: The namespace of the stream for the message that is being created
         :return: The Airbyte state message to be emitted by the connector during a sync
         """
-        hashable_descriptor = HashableStreamDescriptor(name=stream_name, namespace=namespace)
-        stream_state = self.per_stream_states.get(hashable_descriptor) or AirbyteStateBlob()
+        hashable_descriptor = _cached_hashable_descriptor(stream_name, namespace)
+        stream_state = self.per_stream_states.get(hashable_descriptor) or _EMPTY_STATE_BLOB
 
         return AirbyteMessage(
             type=MessageType.STATE,
             state=AirbyteStateMessage(
                 type=AirbyteStateType.STREAM,
                 stream=AirbyteStreamState(
-                    stream_descriptor=StreamDescriptor(name=stream_name, namespace=namespace),
+                    stream_descriptor=_cached_stream_descriptor(stream_name, namespace),
                     stream_state=stream_state,
                 ),
             ),
@@ -159,3 +160,16 @@ class ConnectorStateManager:
         state: Union[List[AirbyteStateMessage], MutableMapping[str, Any]],
     ) -> bool:
         return isinstance(state, List)
+
+
+@lru_cache(maxsize=128)
+def _cached_hashable_descriptor(name: str, namespace: Optional[str]):
+    return HashableStreamDescriptor(name=name, namespace=namespace)
+
+
+@lru_cache(maxsize=128)
+def _cached_stream_descriptor(name: str, namespace: Optional[str]):
+    return StreamDescriptor(name=name, namespace=namespace)
+
+
+_EMPTY_STATE_BLOB = AirbyteStateBlob()
