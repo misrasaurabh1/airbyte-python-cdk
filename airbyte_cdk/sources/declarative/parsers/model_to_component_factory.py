@@ -874,9 +874,9 @@ class ModelToComponentFactory:
     def create_config_remap_field(
         model: ConfigRemapFieldModel, config: Config, **kwargs: Any
     ) -> ConfigRemapField:
-        mapping = cast(Mapping[str, Any], model.map)
+        # Directly pass attributes to constructor, eliminating cast and local variable
         return ConfigRemapField(
-            map=mapping,
+            map=model.map,
             field_path=model.field_path,
             config=config,
         )
