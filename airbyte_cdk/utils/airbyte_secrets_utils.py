@@ -23,12 +23,14 @@ def get_secret_paths(spec: Mapping[str, Any]) -> List[List[str]]:
         """
         if isinstance(schema_item, dict):
             for k, v in schema_item.items():
-                traverse_schema(v, [*path, k])
+                path.append(k)
+                traverse_schema(v, path)
+                path.pop()
         elif isinstance(schema_item, list):
             for i in schema_item:
                 traverse_schema(i, path)
         else:
-            if path[-1] == "airbyte_secret" and schema_item is True:
+            if path and path[-1] == "airbyte_secret" and schema_item is True:
                 filtered_path = [p for p in path[:-1] if p not in ["properties", "oneOf"]]
                 paths.append(filtered_path)
 
