@@ -1,6 +1,7 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
 import logging
+import logging.config
 import threading
 import uuid
 from dataclasses import dataclass, field
@@ -70,11 +71,11 @@ class JobTracker:
             # Nothing to do here as the ID to replace is the same
             return
 
-        lazy_log(
-            LOGGER,
-            logging.DEBUG,
-            lambda: f"JobTracker - Thread {threading.get_native_id()} replacing job {intent_or_job_id} by {job_id}!",
-        )
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            LOGGER.log(
+                logging.DEBUG,
+                f"JobTracker - Thread {threading.get_native_id()} replacing job {intent_or_job_id} by {job_id}!",
+            )
         with self._lock:
             self._jobs.add(job_id)
             self._jobs.remove(intent_or_job_id)
