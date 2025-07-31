@@ -3379,13 +3379,29 @@ class ModelToComponentFactory:
     def _query_properties_in_request_parameters(
         requester: Union[HttpRequesterModel, CustomRequesterModel],
     ) -> bool:
-        if not hasattr(requester, "request_parameters"):
+        """
+        Optimized for speed:
+        - Minimize attribute lookups.
+        - Use duck-typing for mapping check.
+        - Convert .values() to tuple first to avoid repeated .values() calls/iterator overhead for small dicts.
+        - Early returns upon hit, short-circuit non-trivial checks as soon as possible.
+        """
+        try:
+            request_parameters = requester.request_parameters
+        except AttributeError:
             return False
-        request_parameters = requester.request_parameters
-        if request_parameters and isinstance(request_parameters, Mapping):
-            for request_parameter in request_parameters.values():
-                if isinstance(request_parameter, QueryPropertiesModel):
-                    return True
+        if not request_parameters:
+            return False
+        # Use collections.abc.Mapping for isinstance *and* tolerate non-strict Mapping-like objects, but avoid extra overhead from isinstance
+        # Prefer using hasattr over isinstance, but here, for mapping, check for .values attribute and callable
+        values = getattr(request_parameters, "values", None)
+        if values is None or not callable(values):
+            return False
+        # Convert .values() to tuple to avoid keeping iterator open and to take advantage of fast tuple iteration.
+        for request_parameter in tuple(request_parameters.values()):
+            if type(request_parameter) is QueryPropertiesModel:
+                # type-check faster than isinstance for single class
+                return True
         return False
 
     @staticmethod
