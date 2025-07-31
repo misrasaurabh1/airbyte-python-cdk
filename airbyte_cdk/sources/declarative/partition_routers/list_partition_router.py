@@ -62,7 +62,20 @@ class ListPartitionRouter(PartitionRouter):
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> Mapping[str, Any]:
         # Pass the stream_slice from the argument, not the cursor because the cursor is updated after processing the response
-        return self._get_request_option(RequestOptionType.header, stream_slice)
+        if (
+            self.request_option
+            and self.request_option.inject_into == RequestOptionType.header
+            and stream_slice
+        ):
+            cursor_key = self._cursor_field.eval(self.config)
+            # Use 'in' to avoid creating temporary objects for empty slices
+            if cursor_key in stream_slice:
+                slice_value = stream_slice[cursor_key]
+                options: MutableMapping[str, Any] = {}
+                self.request_option.inject_into_request(options, slice_value, self.config)
+                return options
+            return {}
+        return {}
 
     def get_request_body_data(
         self,
