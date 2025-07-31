@@ -130,18 +130,15 @@ class CartesianProductStreamSlicer(PartitionRouter):
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> Mapping[str, Any]:
-        return dict(
-            ChainMap(
-                *[  # type: ignore # ChainMap expects a MutableMapping[Never, Never] for reasons
-                    s.get_request_body_json(
-                        stream_state=stream_state,
-                        stream_slice=stream_slice,
-                        next_page_token=next_page_token,
-                    )
-                    for s in self.stream_slicers
-                ]
+        result = {}
+        for s in reversed(self.stream_slicers):
+            partial = s.get_request_body_json(
+                stream_state=stream_state,
+                stream_slice=stream_slice,
+                next_page_token=next_page_token,
             )
-        )
+            result.update(partial)
+        return result
 
     def stream_slices(self) -> Iterable[StreamSlice]:
         sub_slices = (s.stream_slices() for s in self.stream_slicers)
