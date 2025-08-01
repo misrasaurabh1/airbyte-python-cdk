@@ -134,6 +134,10 @@ class HttpRequestMatcher(RequestMatcher):
             headers=headers,
         )
 
+        # Precompute string repr of params and headers for efficient __str__
+        self._params_str = self._mapping_repr(params)
+        self._headers_str = self._mapping_repr(headers)
+
     def __call__(self, request: Any) -> bool:
         """
         :param request: A requests.Request or requests.PreparedRequest instance.
@@ -142,11 +146,35 @@ class HttpRequestMatcher(RequestMatcher):
         return self._regex_matcher(request)
 
     def __str__(self) -> str:
+        # Use local variables for faster access
+        matcher = self._regex_matcher
+        method = matcher._method
+        url_base = matcher._url_base
+        # _url_path_pattern can be regex or None, pattern is attribute of regex
+        url_path_pattern = matcher._url_path_pattern.pattern if matcher._url_path_pattern else ""
+        # Use precomputed string representations
         return (
-            f"HttpRequestMatcher(method={self._regex_matcher._method}, "
-            f"url={self._regex_matcher._url_base}{self._regex_matcher._url_path_pattern.pattern if self._regex_matcher._url_path_pattern else ''}, "
-            f"params={self._regex_matcher._params}, headers={self._regex_matcher._headers})"
+            f"HttpRequestMatcher(method={method}, "
+            f"url={url_base}{url_path_pattern}, "
+            f"params={self._params_str}, headers={self._headers_str})"
         )
+
+    @staticmethod
+    def _mapping_repr(mapping: Optional[Mapping[str, Any]]) -> str:
+        if not mapping:
+            return "{}"
+        # Sorting keys ensures deterministic output and speeds up str for large dicts
+        # Limit output for very large dicts
+        ITEMS_MAX = 10
+        keys = sorted(mapping)
+        if len(keys) > ITEMS_MAX:
+            shown = keys[:ITEMS_MAX]
+            items = ", ".join(f"{k!r}: {mapping[k]!r}" for k in shown)
+            s = f"{{{items}, ...}}"
+        else:
+            items = ", ".join(f"{k!r}: {mapping[k]!r}" for k in keys)
+            s = f"{{{items}}}"
+        return s
 
 
 class HttpRequestRegexMatcher(RequestMatcher):
