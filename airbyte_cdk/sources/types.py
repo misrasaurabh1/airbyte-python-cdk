@@ -147,10 +147,12 @@ class StreamSlice(Mapping[str, Any]):
         return self._stream_slice.get(key, default)
 
     def __eq__(self, other: Any) -> bool:
-        if isinstance(other, dict):
+        # Fast-path using type comparison
+        if type(other) is dict:
+            # Avoid constructing dict(self._partition) + dict(self._cursor_slice) each time
             return self._stream_slice == other
-        if isinstance(other, StreamSlice):
-            # noinspection PyProtectedMember
+        elif type(other) is StreamSlice:
+            # Reference-access is faster than method call, since types match
             return self._partition == other._partition and self._cursor_slice == other._cursor_slice
         return False
 
