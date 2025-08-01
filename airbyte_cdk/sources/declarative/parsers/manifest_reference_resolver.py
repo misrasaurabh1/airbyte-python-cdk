@@ -202,12 +202,17 @@ def _parse_path(ref: str) -> Tuple[Union[str, int], str]:
     >>> _parse_path("8foo/bar")
     "8foo", "bar"
     """
-    match = re.match(r"([^/]*)/?(.*)", ref)
+    # Use precompiled regex for better performance
+    match = _PARSE_PATH_RE.match(ref)
     if match:
         first, rest = match.groups()
-        try:
+        # Optimize: Fast path for common case—first is an int index (digit only string)
+        if first.isdigit():
             return int(first), rest
-        except ValueError:
+        else:
             return first, rest
     else:
         raise ValueError(f"Invalid path {ref} specified")
+
+
+_PARSE_PATH_RE = re.compile(r"([^/]*)/?(.*)")
