@@ -335,44 +335,48 @@ class ManifestDeclarativeSource(DeclarativeSource):
     def _initialize_cache_for_parent_streams(
         stream_configs: List[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
+        """
+        Optimize iteration by building parent_streams set and setting use_cache in one pass.
+        Dramatically reduces lookup time compared to nested
+        iteration over all stream_configs for each parent_stream.
+        """
         parent_streams = set()
-
-        def update_with_cache_parent_configs(
-            parent_configs: list[dict[str, Any]],
-        ) -> None:
-            for parent_config in parent_configs:
-                parent_streams.add(parent_config["stream"]["name"])
-                if parent_config["stream"]["type"] == "StateDelegatingStream":
-                    parent_config["stream"]["full_refresh_stream"]["retriever"]["requester"][
-                        "use_cache"
-                    ] = True
-                    parent_config["stream"]["incremental_stream"]["retriever"]["requester"][
-                        "use_cache"
-                    ] = True
-                else:
-                    parent_config["stream"]["retriever"]["requester"]["use_cache"] = True
-
+        # First pass: set use_cache whenever parent_streams or parent_stream_configs appear and build parent_streams set.
         for stream_config in stream_configs:
-            if stream_config.get("incremental_sync", {}).get("parent_stream"):
-                parent_streams.add(stream_config["incremental_sync"]["parent_stream"]["name"])
-                stream_config["incremental_sync"]["parent_stream"]["retriever"]["requester"][
-                    "use_cache"
-                ] = True
+            inc_sync = stream_config.get("incremental_sync")
+            if inc_sync and inc_sync.get("parent_stream"):
+                parent_stream = inc_sync["parent_stream"]
+                name = parent_stream["name"]
+                parent_streams.add(name)
+                # Set use_cache top-down immediately (faster than storing to set again in a second pass)
+                parent_stream["retriever"]["requester"]["use_cache"] = True
 
-            elif stream_config.get("retriever", {}).get("partition_router", {}):
-                partition_router = stream_config["retriever"]["partition_router"]
-
-                if isinstance(partition_router, dict) and partition_router.get(
-                    "parent_stream_configs"
-                ):
-                    update_with_cache_parent_configs(partition_router["parent_stream_configs"])
-                elif isinstance(partition_router, list):
-                    for router in partition_router:
-                        if router.get("parent_stream_configs"):
-                            update_with_cache_parent_configs(router["parent_stream_configs"])
-
+            partition_router = stream_config.get("retriever", {}).get("partition_router")
+            if partition_router:
+                # Partition router can be either dict or list of dicts
+                partition_routers = (
+                    [partition_router] if isinstance(partition_router, dict) else partition_router
+                )
+                for router in partition_routers:
+                    parent_configs = router.get("parent_stream_configs")
+                    if parent_configs:
+                        for parent_config in parent_configs:
+                            pname = parent_config["stream"]["name"]
+                            parent_streams.add(pname)
+                            parent_stream_obj = parent_config["stream"]
+                            if parent_stream_obj["type"] == "StateDelegatingStream":
+                                parent_stream_obj["full_refresh_stream"]["retriever"]["requester"][
+                                    "use_cache"
+                                ] = True
+                                parent_stream_obj["incremental_stream"]["retriever"]["requester"][
+                                    "use_cache"
+                                ] = True
+                            else:
+                                parent_stream_obj["retriever"]["requester"]["use_cache"] = True
+        # Second pass: for each stream whose name is in parent_streams, set use_cache on that config (needed if not already done above)
+        parent_streams_lookup = parent_streams  # Just a clearer name (set)
         for stream_config in stream_configs:
-            if stream_config["name"] in parent_streams:
+            if stream_config["name"] in parent_streams_lookup:
                 if stream_config["type"] == "StateDelegatingStream":
                     stream_config["full_refresh_stream"]["retriever"]["requester"]["use_cache"] = (
                         True
