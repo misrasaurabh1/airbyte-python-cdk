@@ -56,12 +56,10 @@ class AsyncPartition:
         )
 
     def has_reached_max_attempt(self) -> bool:
-        return any(
-            map(
-                lambda attempt_count: attempt_count >= self._job_max_retry,
-                self._attempts_per_job.values(),
-            )
-        )
+        for attempt_count in self._attempts_per_job.values():
+            if attempt_count >= self._job_max_retry:
+                return True
+        return False
 
     def replace_job(self, job_to_replace: AsyncJob, new_jobs: List[AsyncJob]) -> None:
         current_attempt_count = self._attempts_per_job.pop(job_to_replace, None)
