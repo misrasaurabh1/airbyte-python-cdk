@@ -93,13 +93,16 @@ class GroupingPartitionRouter(PartitionRouter):
             key: [p.partition.get(key) for p in batch] for key in batch[0].partition.keys()
         }
 
+        # Collect all extra fields keys in one pass to avoid expensive set().union()
+        extra_fields_keys = set()
+        for p in batch:
+            if p.extra_fields:
+                extra_fields_keys.update(p.extra_fields)
+
         # Aggregate extra fields into a dict with list values
         extra_fields_dict = (
-            {
-                key: [p.extra_fields.get(key) for p in batch]
-                for key in set().union(*(p.extra_fields.keys() for p in batch if p.extra_fields))
-            }
-            if any(p.extra_fields for p in batch)
+            {key: [p.extra_fields.get(key) for p in batch] for key in extra_fields_keys}
+            if extra_fields_keys
             else {}
         )
         return StreamSlice(
