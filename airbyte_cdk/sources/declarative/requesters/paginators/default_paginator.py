@@ -212,21 +212,20 @@ class DefaultPaginator(Paginator):
         options: MutableMapping[str, Any] = {}
 
         token = next_page_token.get("next_page_token") if next_page_token else None
+        page_token_option = self.page_token_option
         if (
-            self.page_token_option
+            page_token_option
             and token is not None
-            and isinstance(self.page_token_option, RequestOption)
-            and self.page_token_option.inject_into == option_type
+            and isinstance(page_token_option, RequestOption)
+            and page_token_option.inject_into == option_type
         ):
-            self.page_token_option.inject_into_request(options, token, self.config)
+            page_token_option.inject_into_request(options, token, self.config)
 
-        if (
-            self.page_size_option
-            and self.pagination_strategy.get_page_size()
-            and self.page_size_option.inject_into == option_type
-        ):
+        page_size_option = self.page_size_option
+        if page_size_option and page_size_option.inject_into == option_type:
             page_size = self.pagination_strategy.get_page_size()
-            self.page_size_option.inject_into_request(options, page_size, self.config)
+            if page_size:
+                page_size_option.inject_into_request(options, page_size, self.config)
 
         return options
 
