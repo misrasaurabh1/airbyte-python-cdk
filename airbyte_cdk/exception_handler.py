@@ -4,6 +4,7 @@
 
 import logging
 import sys
+from functools import partial
 from types import TracebackType
 from typing import Any, List, Mapping, Optional
 
@@ -25,24 +26,7 @@ def init_uncaught_exception_handler(logger: logging.Logger) -> None:
     printed to the console without having secrets removed.
     """
 
-    def hook_fn(
-        exception_type: type[BaseException],
-        exception_value: BaseException,
-        traceback_: Optional[TracebackType],
-    ) -> Any:
-        # For developer ergonomics, we want to see the stack trace in the logs when we do a ctrl-c
-        if issubclass(exception_type, KeyboardInterrupt):
-            sys.__excepthook__(exception_type, exception_value, traceback_)
-            return
-
-        logger.fatal(exception_value, exc_info=exception_value)
-
-        # emit an AirbyteTraceMessage for any exception that gets to this spot
-        traced_exc = assemble_uncaught_exception(exception_type, exception_value)
-
-        traced_exc.emit_message()
-
-    sys.excepthook = hook_fn
+    sys.excepthook = partial(_hook_fn, logger)
 
 
 def generate_failed_streams_error_message(stream_failures: Mapping[str, List[Exception]]) -> str:
@@ -54,3 +38,22 @@ def generate_failed_streams_error_message(stream_failures: Mapping[str, List[Exc
         ]
     )
     return f"During the sync, the following streams did not sync successfully: {failures}"
+
+
+def _hook_fn(
+    logger: logging.Logger,
+    exception_type: type[BaseException],
+    exception_value: BaseException,
+    traceback_: Optional[TracebackType],
+) -> Any:
+    # For developer ergonomics, we want to see the stack trace in the logs when we do a ctrl-c
+    if issubclass(exception_type, KeyboardInterrupt):
+        sys.__excepthook__(exception_type, exception_value, traceback_)
+        return
+
+    logger.fatal(exception_value, exc_info=exception_value)
+
+    # emit an AirbyteTraceMessage for any exception that gets to this spot
+    traced_exc = assemble_uncaught_exception(exception_type, exception_value)
+
+    traced_exc.emit_message()
