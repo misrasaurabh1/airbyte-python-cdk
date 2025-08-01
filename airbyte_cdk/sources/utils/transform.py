@@ -21,8 +21,8 @@ python_to_json = {v: k for k, v in json_to_python.items()}
 
 logger = logging.getLogger("airbyte")
 
-_TRUTHY_STRINGS = ("y", "yes", "t", "true", "on", "1")
-_FALSEY_STRINGS = ("n", "no", "f", "false", "off", "0")
+_TRUTHY_STRINGS = frozenset(("y", "yes", "t", "true", "on", "1"))
+_FALSEY_STRINGS = frozenset(("n", "no", "f", "false", "off", "0"))
 
 
 def _strtobool(value: str, /) -> int:
