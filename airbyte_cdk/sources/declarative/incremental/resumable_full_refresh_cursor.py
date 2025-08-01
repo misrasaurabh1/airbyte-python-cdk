@@ -56,6 +56,7 @@ class ResumableFullRefreshCursor(DeclarativeCursor):
     # This is an interesting pattern that might not seem obvious at first glance. This cursor itself has no functional need to
     # inject any request values into the outbound response because the up-to-date pagination state is already loaded and
     # maintained by the paginator component
+    @staticmethod
     def get_request_params(
         self,
         *,
