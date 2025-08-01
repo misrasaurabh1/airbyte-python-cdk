@@ -74,7 +74,7 @@ except LookupError:
 
 
 def optional_decode(contents: Union[str, bytes]) -> str:
-    if isinstance(contents, bytes):
+    if type(contents) is bytes:
         return contents.decode("utf-8")
     return contents
 
