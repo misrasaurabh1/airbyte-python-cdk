@@ -76,24 +76,25 @@ class HttpResponseFilter:
         mapped_key = (
             response_or_exception.status_code
             if isinstance(response_or_exception, requests.Response)
-            else response_or_exception.__class__
+            else type(response_or_exception)
+            if isinstance(response_or_exception, Exception)
+            else None
+        )
+        default_mapped_error_resolution = (
+            DEFAULT_ERROR_MAPPING.get(mapped_key) if mapped_key is not None else None
         )
 
-        if isinstance(mapped_key, (int, Exception)):
-            default_mapped_error_resolution = self._match_default_error_mapping(mapped_key)
-        else:
-            default_mapped_error_resolution = None
-
         if filter_action is not None:
-            default_error_message = (
+            # Use error message from filter or fallback to default mapping
+            error_message = (
+                self._create_error_message(response_or_exception)
+                if isinstance(response_or_exception, requests.Response)
+                else None
+            ) or (
                 default_mapped_error_resolution.error_message
                 if default_mapped_error_resolution
                 else ""
             )
-            error_message = None
-            if isinstance(response_or_exception, requests.Response):
-                error_message = self._create_error_message(response_or_exception)
-            error_message = error_message or default_error_message
 
             if self.failure_type and filter_action == ResponseAction.FAIL:
                 failure_type = self.failure_type
@@ -109,10 +110,11 @@ class HttpResponseFilter:
             )
 
         if (
-            (isinstance(self.http_codes, list) and len(self.http_codes)) is None
-            and self.predicate is None
-            and self.error_message_contains is None
-        ) and default_mapped_error_resolution:
+            not self.http_codes
+            and not self.predicate
+            and not self.error_message_contains
+            and default_mapped_error_resolution
+        ):
             return default_mapped_error_resolution
 
         return None

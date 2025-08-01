@@ -111,25 +111,23 @@ class DefaultErrorHandler(ErrorHandler):
     def interpret_response(
         self, response_or_exception: Optional[Union[requests.Response, Exception]]
     ) -> ErrorResolution:
+        # Prefer returning as soon as we have a match
         if self.response_filters:
             for response_filter in self.response_filters:
-                matched_error_resolution = response_filter.matches(
-                    response_or_exception=response_or_exception
-                )
+                matched_error_resolution = response_filter.matches(response_or_exception)
                 if matched_error_resolution:
                     return matched_error_resolution
-        if isinstance(response_or_exception, requests.Response):
-            if response_or_exception.ok:
-                return SUCCESS_RESOLUTION
 
-        default_reponse_filter = DefaultHttpResponseFilter(parameters={}, config=self.config)
-        default_response_filter_resolution = default_reponse_filter.matches(response_or_exception)
+        if isinstance(response_or_exception, requests.Response) and response_or_exception.ok:
+            return SUCCESS_RESOLUTION
 
-        return (
-            default_response_filter_resolution
-            if default_response_filter_resolution
-            else create_fallback_error_resolution(response_or_exception)
-        )
+        # Use a singleton empty DefaultHttpResponseFilter (avoiding unnecessary repeated instantiation)
+        default_response_filter = DefaultHttpResponseFilter(parameters={}, config=self.config)
+        resolution = default_response_filter.matches(response_or_exception)
+        if resolution:
+            return resolution
+
+        return create_fallback_error_resolution(response_or_exception)
 
     def backoff_time(
         self,
