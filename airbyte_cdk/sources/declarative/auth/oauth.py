@@ -214,7 +214,14 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         return self._refresh_token_name.eval(self.config)  # type: ignore # eval returns a string in this context
 
     def get_refresh_token(self) -> Optional[str]:
-        return None if self._refresh_token is None else str(self._refresh_token.eval(self.config))
+        refresh_token = self._refresh_token
+        if refresh_token is None:
+            return None
+        # Local var for self.config to avoid repeated attribute lookup
+        config = self.config
+        value = refresh_token.eval(config)
+        # str(x) is fast if x is already a string
+        return None if value is None else str(value)
 
     def get_scopes(self) -> List[str]:
         return self.scopes or []
