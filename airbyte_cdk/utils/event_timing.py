@@ -7,6 +7,7 @@ import logging
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from operator import attrgetter
 from typing import Any, Generator, Literal, Optional
 
 logger = logging.getLogger("airbyte")
@@ -47,13 +48,14 @@ class EventTimer:
         """
         :param order_by: 'name' or 'duration'
         """
+        events_values = self.events.values()
         if order_by == "name":
-            events = sorted(self.events.values(), key=lambda event: event.name)
+            sorted_events = sorted(events_values, key=attrgetter("name"))
         elif order_by == "duration":
-            events = sorted(self.events.values(), key=lambda event: event.duration)
-        text = f"{self.name} runtimes:\n"
-        text += "\n".join(str(event) for event in events)
-        return text
+            sorted_events = sorted(events_values, key=attrgetter("duration"))
+        event_lines = [str(event) for event in sorted_events]
+        # Efficient string construction
+        return f"{self.name} runtimes:\n" + "\n".join(event_lines)
 
 
 @dataclass
