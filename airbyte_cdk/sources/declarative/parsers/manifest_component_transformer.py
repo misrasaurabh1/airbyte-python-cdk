@@ -194,10 +194,8 @@ class ManifestComponentTransformer:
 
     @staticmethod
     def _is_json_schema_object(propagated_component: Mapping[str, Any]) -> bool:
-        return propagated_component.get("type") == "object" or propagated_component.get("type") == [
-            "null",
-            "object",
-        ]
+        type_val = propagated_component.get("type")
+        return type_val == "object" or type_val == ["null", "object"]
 
     @staticmethod
     def _has_nested_components(propagated_component: Dict[str, Any]) -> bool:
