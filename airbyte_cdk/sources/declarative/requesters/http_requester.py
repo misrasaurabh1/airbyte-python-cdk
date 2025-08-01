@@ -193,12 +193,21 @@ class HttpRequester(Requester):
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> str:
-        interpolation_context = get_interpolation_context(
-            stream_state=stream_state,
-            stream_slice=stream_slice,
-            next_page_token=next_page_token,
-        )
-        path = str(self._path.eval(self.config, **interpolation_context))
+        # Inline the former get_interpolation_context for reduced call and dict overhead
+        # This avoids unnecessary function call and spreads dict only if extra_fields are present.
+        context = {
+            "stream_slice": stream_slice,
+            "next_page_token": next_page_token,
+        }
+        if stream_slice is not None and hasattr(stream_slice, "extra_fields"):
+            # For best performance, do not copy dicts unless necessary
+            ef = getattr(stream_slice, "extra_fields", None)
+            if ef:
+                # Spread extra_fields keys into the context dict (mutating in-place for speed)
+                context.update(ef)
+
+        # This is the main per-call cost: self._path.eval(...)
+        path = str(self._path.eval(self.config, **context))
         return path.lstrip("/")
 
     def get_method(self) -> HttpMethod:
