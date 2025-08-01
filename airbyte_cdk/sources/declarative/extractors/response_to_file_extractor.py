@@ -18,6 +18,9 @@ from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordEx
 DEFAULT_ENCODING: str = "utf-8"
 DOWNLOAD_CHUNK_SIZE: int = 1024 * 10
 
+DEFAULT_ENCODING: str = "utf-8"
+DOWNLOAD_CHUNK_SIZE: int = 1024 * 10
+
 
 @dataclass
 class ResponseToFileExtractor(RecordExtractor):
@@ -44,17 +47,15 @@ class ResponseToFileExtractor(RecordExtractor):
         Returns:
             str: The encoding of the response.
         """
-
         content_type = headers.get("content-type")
-
         if not content_type:
             return DEFAULT_ENCODING
 
-        content_type, params = requests.utils.parse_header_links(content_type)
-
-        if "charset" in params:
-            return params["charset"].strip("'\"")  # type: ignore  # we assume headers are returned as str
-
+        # Parse like requests: look for 'charset=' in the header
+        parts = content_type.split(";")
+        for part in parts[1:]:
+            if "charset=" in part:
+                return part.split("charset=", 1)[1].strip().strip("'\"")
         return DEFAULT_ENCODING
 
     def _filter_null_bytes(self, b: bytes) -> bytes:
@@ -90,25 +91,47 @@ class ResponseToFileExtractor(RecordExtractor):
         Raises:
             ValueError: If the temporary file does not exist after saving the binary data.
         """
-        # set filepath for binary data from response
         decompressor = zlib.decompressobj(zlib.MAX_WBITS | 32)
-        needs_decompression = True  # we will assume at first that the response is compressed and change the flag if not
-
+        needs_decompression = True
         tmp_file = str(uuid.uuid4())
+        null_bytes_filtered = False
+
         with closing(response) as response, open(tmp_file, "wb") as data_file:
-            response_encoding = self._get_response_encoding(dict(response.headers or {}))
+            response_encoding = self._get_response_encoding(response.headers)
+
             for chunk in response.iter_content(chunk_size=DOWNLOAD_CHUNK_SIZE):
+                out = None
                 try:
                     if needs_decompression:
-                        data_file.write(decompressor.decompress(chunk))
-                        needs_decompression = True
+                        out = decompressor.decompress(chunk)
+                        data_file.write(out)
                     else:
-                        data_file.write(self._filter_null_bytes(chunk))
+                        # Only filter if necessary
+                        if chunk.find(b"\x00") != -1:
+                            null_bytes_filtered = True
+                            out = chunk.replace(b"\x00", b"")
+                        else:
+                            out = chunk
+                        data_file.write(out)
                 except zlib.error:
-                    data_file.write(self._filter_null_bytes(chunk))
+                    # fallback: not compressed, treat as normal bytes
                     needs_decompression = False
+                    if chunk.find(b"\x00") != -1:
+                        null_bytes_filtered = True
+                        out = chunk.replace(b"\x00", b"")
+                    else:
+                        out = chunk
+                    data_file.write(out)
 
-        # check the file exists
+            # After all chunks, warn *once* if any nulls were filtered
+            if null_bytes_filtered:
+                if not hasattr(self, "logger"):
+                    self.logger = logging.getLogger("airbyte")
+                self.logger.warning(
+                    "Filtered 'null' bytes from at least one chunk in the response file '%s'.",
+                    tmp_file,
+                )
+
         if os.path.isfile(tmp_file):
             return tmp_file, response_encoding
         else:
