@@ -174,15 +174,29 @@ class HttpClient:
         :param params:
         :return:
         """
-        if params is None:
-            params = {}
-        query_string = urllib.parse.urlparse(url).query
-        query_dict = {k: v[0] for k, v in urllib.parse.parse_qs(query_string).items()}
+        # Fast path for empty params
+        if not params:
+            return {}
 
-        duplicate_keys_with_same_value = {
-            k for k in query_dict.keys() if str(params.get(k)) == str(query_dict[k])
-        }
-        return {k: v for k, v in params.items() if k not in duplicate_keys_with_same_value}
+        query = urllib.parse.urlparse(url).query
+        if not query:
+            return params
+
+        # Use parse_qsl, which is faster, and don't build a dict of lists
+        url_param_pairs = urllib.parse.parse_qsl(query, keep_blank_values=True)
+        # Build a dict just for first value (matches original: v[0]),
+        # but keep keys and values as strings for precise str cmp
+        url_param_dict = dict(url_param_pairs)
+
+        # Avoid set and unnecessary dict comprehension by a simple loop
+        result = {}
+        for k, v in params.items():
+            v_url = url_param_dict.get(k)
+            if v_url is not None and str(v) == str(v_url):
+                # duplicate, skip it
+                continue
+            result[k] = v
+        return result
 
     def _create_prepared_request(
         self,
