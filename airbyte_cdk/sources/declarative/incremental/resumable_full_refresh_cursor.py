@@ -92,6 +92,9 @@ class ResumableFullRefreshCursor(DeclarativeCursor):
     ) -> Mapping[str, Any]:
         return {}
 
+    def __init__(self):
+        self._cursor: StreamState = {}
+
 
 @dataclass
 class ChildPartitionResumableFullRefreshCursor(ResumableFullRefreshCursor):
