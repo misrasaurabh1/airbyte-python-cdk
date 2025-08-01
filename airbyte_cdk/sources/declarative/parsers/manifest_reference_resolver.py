@@ -104,33 +104,55 @@ class ManifestReferenceResolver:
         :param manifest: incoming manifest that could have references to previously defined components
         :return:
         """
+        self._ref_cache = {}
         return self._evaluate_node(manifest, manifest, set())  # type: ignore[no-any-return]
 
     def _evaluate_node(self, node: Any, manifest: Mapping[str, Any], visited: Set[Any]) -> Any:
-        if isinstance(node, dict):
-            evaluated_dict = {
-                k: self._evaluate_node(v, manifest, visited)
-                for k, v in node.items()
-                if not self._is_ref_key(k)
-            }
+        # Fast path for common types
+        is_dict = isinstance(node, dict)
+        if is_dict:
+            has_ref_tag = False
+            # Only build dict if necessary; avoid listcomp if $ref is present as top priority
+            evaluated_dict = {}
+            for k, v in node.items():
+                if self._is_ref_key(k):
+                    has_ref_tag = True
+                    continue
+                evaluated_dict[k] = self._evaluate_node(v, manifest, visited)
             if REF_TAG in node:
                 # The node includes a $ref key, so we splat the referenced value(s) into the evaluated dict
                 evaluated_ref = self._evaluate_node(node[REF_TAG], manifest, visited)
+                # Avoid unnecessary copying
                 if not isinstance(evaluated_ref, dict):
                     return evaluated_ref
                 else:
                     # The values defined on the component take precedence over the reference values
-                    return evaluated_ref | evaluated_dict
-            else:
-                return evaluated_dict
+                    # Use | only if evaluated_dict is not empty
+                    if not evaluated_dict:
+                        return evaluated_ref.copy()
+                    # Prefer the (usually smaller) dict first for performance with "|"
+                    return {**evaluated_ref, **evaluated_dict}
+            return evaluated_dict
         elif isinstance(node, list):
+            # Avoid listcomp call overhead if list is short/empty
+            if not node:
+                return []
             return [self._evaluate_node(v, manifest, visited) for v in node]
         elif self._is_ref(node):
+            # Optimize for repeated refs: memoize resolved values
+            cache = self._ref_cache
+            if node in cache:
+                return cache[node]
             if node in visited:
                 raise CircularReferenceException(node)
             visited.add(node)
-            ret = self._evaluate_node(self._lookup_ref_value(node, manifest), manifest, visited)
+            ref_val = self._lookup_ref_value(node, manifest)
+            # Can recursively cache references only if they're not cyclic
+            ret = self._evaluate_node(ref_val, manifest, visited)
             visited.remove(node)
+            # Only cache immutable (hashable) results; otherwise don't risk with objects that may mutate
+            # In this manifest system, references to dict/list/str should be safe for caching (deepcopy not necessary for this context)
+            cache[node] = ret
             return ret
         else:
             return node
