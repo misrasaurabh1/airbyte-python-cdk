@@ -36,16 +36,44 @@ class InterpolatedMapping:
         """
         valid_key_types = additional_parameters.pop("valid_key_types", (str,))
         valid_value_types = additional_parameters.pop("valid_value_types", None)
-        return {
-            self._interpolation.eval(
-                name,
-                config,
-                valid_types=valid_key_types,
-                parameters=self._parameters,
-                **additional_parameters,
-            ): self._eval(value, config, valid_types=valid_value_types, **additional_parameters)
-            for name, value in self.mapping.items()
-        }
+
+        # Local references for loop performance
+        interpolation_eval = self._interpolation.eval
+        eval_value = self._eval
+        parameters = self._parameters
+        mapping_items = self.mapping.items
+
+        # Fast path: avoid interpolating keys/values that are obviously not templates
+        result = []
+        for name, value in mapping_items():
+            # Fast interpolation for keys: Only interpolate if string with template markers
+            if isinstance(name, str) and "{{" in name:
+                key_interp = interpolation_eval(
+                    name,
+                    config,
+                    valid_types=valid_key_types,
+                    parameters=parameters,
+                    **additional_parameters,
+                )
+            else:
+                key_interp = name if isinstance(name, valid_key_types) else name
+
+            # Fast interpolation for values: Only interpolate string values containing templates
+            if isinstance(value, str) and "{{" in value:
+                val_interp = eval_value(
+                    value, config, valid_types=valid_value_types, **additional_parameters
+                )
+            else:
+                val_interp = (
+                    eval_value(
+                        value, config, valid_types=valid_value_types, **additional_parameters
+                    )
+                    if not isinstance(value, str) or valid_value_types
+                    else value
+                )
+
+            result.append((key_interp, val_interp))
+        return dict(result)
 
     def _eval(self, value: str, config: Config, **kwargs: Any) -> Any:
         # The values in self._mapping can be of Any type
