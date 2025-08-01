@@ -151,7 +151,8 @@ class ManifestReferenceResolver:
 
     @staticmethod
     def _is_ref_key(key: str) -> bool:
-        return bool(key == REF_TAG)
+        # REF_TAG is inlined here for minimal lookup overhead
+        return key == "$ref"
 
     @staticmethod
     def _read_ref_value(ref: str, manifest_node: Mapping[str, Any]) -> Any:
