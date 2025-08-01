@@ -49,14 +49,15 @@ class PerPartitionCursor(DeclarativeCursor):
     _VALUE = 1
     _state_to_migrate_from: Mapping[str, Any] = {}
 
-    def __init__(self, cursor_factory: CursorFactory, partition_router: PartitionRouter):
+    def __init__(self, cursor_factory: "CursorFactory", partition_router: PartitionRouter):
         self._cursor_factory = cursor_factory
         self._partition_router = partition_router
         # The dict is ordered to ensure that once the maximum number of partitions is reached,
         # the oldest partitions can be efficiently removed, maintaining the most recent partitions.
         self._cursor_per_partition: OrderedDict[str, DeclarativeCursor] = OrderedDict()
         self._over_limit = 0
-        self._partition_serializer = PerPartitionKeySerializer()
+        # Use the optimized static serializer; no instance needed
+        # self._partition_serializer = PerPartitionKeySerializer()
 
     def stream_slices(self) -> Iterable[StreamSlice]:
         slices = self._partition_router.stream_slices()
@@ -195,7 +196,8 @@ class PerPartitionCursor(DeclarativeCursor):
         return not bool(stream_state)
 
     def _to_partition_key(self, partition: Mapping[str, Any]) -> str:
-        return self._partition_serializer.to_partition_key(partition)
+        # Use the new optimized and cached serializer
+        return PerPartitionKeySerializer.to_partition_key(partition)
 
     def _to_dict(self, partition_key: str) -> Mapping[str, Any]:
         return self._partition_serializer.to_partition(partition_key)
@@ -363,3 +365,21 @@ class PerPartitionCursor(DeclarativeCursor):
         cursor = self._create_cursor(partition_state)
 
         self._cursor_per_partition[partition_key] = cursor
+
+
+def _any_to_tuple(v):
+    if isinstance(v, dict):
+        return tuple((k, _any_to_tuple(val)) for k, val in sorted(v.items()))
+    elif isinstance(v, list):
+        return tuple(_any_to_tuple(i) for i in v)
+    else:
+        return v
+
+
+def _tuple_to_obj(obj):
+    if not isinstance(obj, tuple):
+        return obj
+    if all(isinstance(e, tuple) and len(e) == 2 and isinstance(e[0], str) for e in obj):
+        return {k: _tuple_to_obj(v) for k, v in obj}
+    else:
+        return [_tuple_to_obj(i) for i in obj]
