@@ -200,9 +200,12 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         return self._client_secret_name.eval(self.config)  # type: ignore # eval returns a string in this context
 
     def get_client_secret(self) -> str:
-        client_secret = (
-            self._client_secret.eval(self.config) if self._client_secret else self._client_secret
-        )
+        # Local attr caching, minimizes attribute lookup + branch fast path
+        client_secret_eval = self._client_secret
+        if client_secret_eval:
+            client_secret = client_secret_eval.eval(self.config)
+        else:
+            client_secret = client_secret_eval
         if not client_secret:
             # We've seen some APIs allowing empty client_secret so we will only log here
             logger.warning(

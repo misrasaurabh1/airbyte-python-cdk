@@ -48,7 +48,10 @@ class InterpolatedString:
             evaluated = self._interpolation.eval(
                 self.string, config, self.default, parameters=self._parameters, **kwargs
             )
-            self._is_plain_string = self.string == evaluated
+            is_plain = self.string == evaluated
+            self._is_plain_string = is_plain
+            if is_plain:
+                return self.string
             return evaluated
         return self._interpolation.eval(
             self.string, config, self.default, parameters=self._parameters, **kwargs
