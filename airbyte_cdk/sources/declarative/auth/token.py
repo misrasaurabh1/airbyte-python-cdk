@@ -19,6 +19,18 @@ from airbyte_cdk.sources.declarative.requesters.request_option import (
 )
 from airbyte_cdk.sources.types import Config
 
+"""
+    maxsize - The maximum size of the cache
+    ttl - time-to-live value in seconds
+    docs https://cachetools.readthedocs.io/en/latest/
+    maxsize=1000 - when the cache is full, in this case more than 1000,
+    i.e. by adding another item the cache would exceed its maximum size, the cache must choose which item(s) to discard
+    ttl=86400 means that cached token will live for 86400 seconds (one day)
+"""
+cacheSessionTokenAuthenticator: TTLCache[str, str] = TTLCache(maxsize=1000, ttl=86400)
+
+_EMPTY_DICT: Mapping[str, Any] = {}
+
 
 @dataclass
 class ApiKeyAuthenticator(DeclarativeAuthenticator):
@@ -67,7 +79,13 @@ class ApiKeyAuthenticator(DeclarativeAuthenticator):
         return self._get_request_options(RequestOptionType.body_data)
 
     def get_request_body_json(self) -> Mapping[str, Any]:
-        return self._get_request_options(RequestOptionType.body_json)
+        # Direct check avoids unnecessary calls/alloc
+        if self.request_option.inject_into == RequestOptionType.body_json:
+            options: MutableMapping[str, Any] = {}
+            token = self.token
+            self.request_option.inject_into_request(options, token, self.config)
+            return options
+        return _EMPTY_DICT
 
 
 @dataclass
