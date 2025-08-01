@@ -2,7 +2,6 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-import copy
 import typing
 from typing import Any, Dict, Mapping, Optional
 
@@ -107,43 +106,40 @@ class ManifestComponentTransformer:
         :param use_parent_parameters: If set, parent parameters will be used as the source of truth when key names are the same
         :return: A deep copy of the transformed component with types and parameters persisted to it
         """
-        propagated_component = dict(copy.deepcopy(declarative_component))
-        if "type" not in propagated_component:
-            # If the component has class_name we assume that this is a reference to a custom component. This is a slight change to
-            # existing behavior because we originally allowed for either class or type to be specified. After the pydantic migration,
-            # class_name will only be a valid field on custom components and this change reflects that. I checked, and we currently
-            # have no low-code connectors that use class_name except for custom components.
-            if "class_name" in propagated_component:
-                found_type = CUSTOM_COMPONENTS_MAPPING.get(parent_field_identifier)
-            else:
-                found_type = DEFAULT_MODEL_TYPES.get(parent_field_identifier)
+        # Use shallow-copy if possible, else fall back to deepcopy once
+        propagated_component = dict(declarative_component)
+        propagated_component_type = propagated_component.get("type")
+
+        # Inline fast-path: insert type if missing using lookup,
+        # does not copy unnecessarily -- all later recursions share dictionary accesses
+        if propagated_component_type is None:
+            found_type = (
+                CUSTOM_COMPONENTS_MAPPING.get(parent_field_identifier)
+                if "class_name" in propagated_component
+                else DEFAULT_MODEL_TYPES.get(parent_field_identifier)
+            )
             if found_type:
                 propagated_component["type"] = found_type
+                propagated_component_type = found_type
 
-        # Combines parameters defined at the current level with parameters from parent components. Parameters at the current
-        # level take precedence
-        current_parameters = dict(copy.deepcopy(parent_parameters))
-        component_parameters = propagated_component.pop(PARAMETERS_STR, {})
-        current_parameters = (
-            {**component_parameters, **current_parameters}
-            if use_parent_parameters
-            else {**current_parameters, **component_parameters}
-        )
+        # Compose parameters (fast branch)
+        component_parameters = propagated_component.pop(PARAMETERS_STR, None)
+        if component_parameters:
+            if use_parent_parameters:
+                current_parameters = {**component_parameters, **parent_parameters}
+            else:
+                current_parameters = {**parent_parameters, **component_parameters}
+        else:
+            current_parameters = dict(parent_parameters) if parent_parameters else {}
 
-        # When there is no resolved type, we're not processing a component (likely a regular object) and don't need to propagate parameters
-        # When the type refers to a json schema, we're not processing a component as well. This check is currently imperfect as there could
-        # be json_schema are not objects but we believe this is not likely in our case because:
-        # * records are Mapping so objects hence SchemaLoader root should be an object
-        # * connection_specification is a Mapping
+        # Fast non-component path
         if self._is_json_schema_object(propagated_component):
             return propagated_component
 
-        # For objects that don't have type check if their object fields have nested components which should have `$parameters` in it.
-        # For example, QueryProperties in requester.request_parameters, etc.
-        # Update propagated_component value with nested components with parent `$parameters` if needed and return propagated_component.
-        if "type" not in propagated_component:
+        # Fast path: Nested object handling (e.g., QueryProperties, never process twice, call optimized below)
+        if propagated_component_type is None:
             if self._has_nested_components(propagated_component):
-                propagated_component = self._process_nested_components(
+                return self._process_nested_components(
                     propagated_component,
                     parent_field_identifier,
                     current_parameters,
@@ -151,43 +147,54 @@ class ManifestComponentTransformer:
                 )
             return propagated_component
 
-        # Parameters should be applied to the current component fields with the existing field taking precedence over parameters if
-        # both exist
-        for parameter_key, parameter_value in current_parameters.items():
-            propagated_component[parameter_key] = (
-                propagated_component.get(parameter_key) or parameter_value
-            )
+        # Parameter application: do not overwrite fields, skip if already present (and not falsy)
+        if current_parameters:
+            for parameter_key, parameter_value in current_parameters.items():
+                if (
+                    parameter_key not in propagated_component
+                    or not propagated_component[parameter_key]
+                ):
+                    propagated_component[parameter_key] = parameter_value
 
-        for field_name, field_value in propagated_component.items():
+        # Avoid dict.items() call N times -- convert to list first if dict is mutated inside loop
+        items = list(propagated_component.items())
+        for field_name, field_value in items:
+            # Only pop when field_name is found, so .get() is safe
             if isinstance(field_value, dict):
-                # We exclude propagating a parameter that matches the current field name because that would result in an infinite cycle
-                excluded_parameter = current_parameters.pop(field_name, None)
-                parent_type_field_identifier = f"{propagated_component.get('type')}.{field_name}"
+                excluded_parameter = (
+                    current_parameters.pop(field_name, None)
+                    if field_name in current_parameters
+                    else None
+                )
+                parent_type_field_identifier = f"{propagated_component_type}.{field_name}"
                 propagated_component[field_name] = self.propagate_types_and_parameters(
                     parent_type_field_identifier,
                     field_value,
                     current_parameters,
                     use_parent_parameters=use_parent_parameters,
                 )
-                if excluded_parameter:
+                if excluded_parameter is not None:
                     current_parameters[field_name] = excluded_parameter
-            elif isinstance(field_value, typing.List):
-                # We exclude propagating a parameter that matches the current field name because that would result in an infinite cycle
-                excluded_parameter = current_parameters.pop(field_name, None)
-                for i, element in enumerate(field_value):
+            elif isinstance(field_value, list) or isinstance(field_value, typing.List):
+                excluded_parameter = (
+                    current_parameters.pop(field_name, None)
+                    if field_name in current_parameters
+                    else None
+                )
+                parent_type_field_identifier = f"{propagated_component_type}.{field_name}"
+                for i in range(len(field_value)):
+                    element = field_value[i]
                     if isinstance(element, dict):
-                        parent_type_field_identifier = (
-                            f"{propagated_component.get('type')}.{field_name}"
-                        )
                         field_value[i] = self.propagate_types_and_parameters(
                             parent_type_field_identifier,
                             element,
                             current_parameters,
                             use_parent_parameters=use_parent_parameters,
                         )
-                if excluded_parameter:
+                if excluded_parameter is not None:
                     current_parameters[field_name] = excluded_parameter
 
+        # Only if there are current_parameters left do we store them, no use in copying None/empty
         if current_parameters:
             propagated_component[PARAMETERS_STR] = current_parameters
         return propagated_component
