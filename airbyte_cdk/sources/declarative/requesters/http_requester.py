@@ -140,7 +140,8 @@ class HttpRequester(Requester):
             next_page_token=next_page_token,
         )
 
-        return str(self._url.eval(self.config, **interpolation_context))
+        url_val = self._url.eval(self.config, **interpolation_context)
+        return url_val if isinstance(url_val, str) else str(url_val)
 
     def _get_url(
         self,
