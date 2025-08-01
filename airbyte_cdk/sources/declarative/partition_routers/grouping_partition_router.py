@@ -108,6 +108,7 @@ class GroupingPartitionRouter(PartitionRouter):
             extra_fields=extra_fields_dict,
         )
 
+    @staticmethod
     def get_request_params(
         self,
         stream_state: Optional[StreamState] = None,
