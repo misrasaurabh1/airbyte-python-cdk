@@ -340,12 +340,13 @@ class GlobalSubstreamCursor(DeclarativeCursor):
 
     @staticmethod
     def _convert_record_to_cursor_record(record: Record) -> Record:
+        assoc_slice = record.associated_slice
+        if assoc_slice is not None:
+            new_slice = StreamSlice(partition={}, cursor_slice=assoc_slice.cursor_slice)
+        else:
+            new_slice = None
         return Record(
             data=record.data,
             stream_name=record.stream_name,
-            associated_slice=StreamSlice(
-                partition={}, cursor_slice=record.associated_slice.cursor_slice
-            )
-            if record.associated_slice
-            else None,
+            associated_slice=new_slice,
         )
