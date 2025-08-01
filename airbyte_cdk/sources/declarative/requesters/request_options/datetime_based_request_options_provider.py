@@ -54,6 +54,7 @@ class DatetimeBasedRequestOptionsProvider(RequestOptionsProvider):
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> Mapping[str, Any]:
+        # Only stream_slice is relevant for this provider
         return self._get_request_options(RequestOptionType.header, stream_slice)
 
     def get_request_body_data(
@@ -77,16 +78,23 @@ class DatetimeBasedRequestOptionsProvider(RequestOptionsProvider):
     def _get_request_options(
         self, option_type: RequestOptionType, stream_slice: Optional[StreamSlice]
     ) -> Mapping[str, Any]:
+        # Minimize dict and attribute access in the main hot path
+        if stream_slice is None:
+            # Return early with empty dict if no slice
+            return {}
+
         options: MutableMapping[str, Any] = {}
-        if not stream_slice:
-            return options
 
-        if self.start_time_option and self.start_time_option.inject_into == option_type:
-            start_time_value = stream_slice.get(self._partition_field_start.eval(self.config))
-            self.start_time_option.inject_into_request(options, start_time_value, self.config)
+        start_time_option = self.start_time_option
+        if start_time_option is not None and start_time_option.inject_into == option_type:
+            key_start = self._partition_field_start.eval(self.config)
+            start_time_value = stream_slice.get(key_start)
+            start_time_option.inject_into_request(options, start_time_value, self.config)
 
-        if self.end_time_option and self.end_time_option.inject_into == option_type:
-            end_time_value = stream_slice.get(self._partition_field_end.eval(self.config))
-            self.end_time_option.inject_into_request(options, end_time_value, self.config)
+        end_time_option = self.end_time_option
+        if end_time_option is not None and end_time_option.inject_into == option_type:
+            key_end = self._partition_field_end.eval(self.config)
+            end_time_value = stream_slice.get(key_end)
+            end_time_option.inject_into_request(options, end_time_value, self.config)
 
         return options
