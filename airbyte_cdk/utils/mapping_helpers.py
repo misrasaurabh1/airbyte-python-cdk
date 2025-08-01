@@ -150,13 +150,9 @@ def get_interpolation_context(
     stream_slice: Optional[StreamSlice] = None,
     next_page_token: Optional[Mapping[str, Any]] = None,
 ) -> Mapping[str, Any]:
-    return {
-        "stream_slice": stream_slice,
-        "next_page_token": next_page_token,
-        # update the context with extra fields, if passed.
-        **(
-            stream_slice.extra_fields
-            if stream_slice is not None and hasattr(stream_slice, "extra_fields")
-            else {}
-        ),
-    }
+    if stream_slice is not None and hasattr(stream_slice, "extra_fields"):
+        ctx = {"stream_slice": stream_slice, "next_page_token": next_page_token}
+        ctx.update(stream_slice.extra_fields)
+        return ctx
+    else:
+        return {"stream_slice": stream_slice, "next_page_token": next_page_token}

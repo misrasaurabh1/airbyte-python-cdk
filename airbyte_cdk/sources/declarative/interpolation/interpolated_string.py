@@ -40,16 +40,33 @@ class InterpolatedString:
         :param kwargs: Optional parameters used for interpolation
         :return: The interpolated string
         """
-        if self._is_plain_string:
-            return self.string
-        if self._is_plain_string is None:
-            # Let's check whether output from evaluation is the same as input.
-            # This indicates occurrence of a plain string, not a template and we can skip Jinja in subsequent runs.
-            evaluated = self._interpolation.eval(
-                self.string, config, self.default, parameters=self._parameters, **kwargs
-            )
-            self._is_plain_string = self.string == evaluated
-            return evaluated
+        # Use cached outcome if available
+        is_plain = self._is_plain_string
+        # Optimization: for plain string, cache the result after first call to avoid further evaluation.
+        # We use _plain_string_value to store the resolved value.
+        cached_plain_value = getattr(self, "_plain_string_value", None)
+        if is_plain:
+            return cached_plain_value if cached_plain_value is not None else self.string
+        if is_plain is None:
+            # Fast path: if the string contains no template markers, it's plain
+            # The two jinja delimiters are "{{" and "{%"; if neither is present, string can't be a template
+            has_curly = "{{" in self.string or "{%" in self.string
+            if not has_curly:
+                # Definite plain string - set flags and return immediately, no jinja call
+                self._is_plain_string = True
+                self._plain_string_value = self.string
+                return self.string
+            else:
+                # Fallback: call interpolation to definitively determine if plain
+                evaluated = self._interpolation.eval(
+                    self.string, config, self.default, parameters=self._parameters, **kwargs
+                )
+                self._is_plain_string = self.string == evaluated
+                if self._is_plain_string:
+                    self._plain_string_value = evaluated
+                return evaluated
+
+        # _is_plain_string is False: always jinja-eval
         return self._interpolation.eval(
             self.string, config, self.default, parameters=self._parameters, **kwargs
         )
