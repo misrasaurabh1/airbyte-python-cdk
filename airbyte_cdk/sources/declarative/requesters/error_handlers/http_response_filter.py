@@ -130,12 +130,29 @@ class HttpResponseFilter:
         :param response: The HTTP response to evaluate
         :return: The action to execute. None if the response does not match the filter
         """
-        if isinstance(response_or_exception, requests.Response) and (
-            response_or_exception.status_code in self.http_codes  # type: ignore # http_codes set is always initialized to a value in __post_init__
-            or self._response_matches_predicate(response_or_exception)
-            or self._response_contains_error_message(response_or_exception)
-        ):
+        if not isinstance(response_or_exception, requests.Response):
+            return None
+
+        if response_or_exception.status_code in self.http_codes:  # type: ignore # http_codes set is always initialized to a value in __post_init__
             return self.action  # type: ignore # action is always cast to a ResponseAction not a str
+
+        # Inline _response_matches_predicate
+        if self.predicate and getattr(self.predicate, "condition", None):
+            if self.predicate.eval(  # type:ignore[union-attr]
+                None,  # type: ignore[arg-type]
+                response=self._safe_response_json(response_or_exception),
+                headers=response_or_exception.headers,
+            ):
+                return self.action  # type: ignore # action is always cast to a ResponseAction not a str
+
+        # Inline _response_contains_error_message
+        if self.error_message_contains:
+            error_message = self._error_message_parser.parse_response_error_message(
+                response=response_or_exception
+            )
+            if error_message and self.error_message_contains in error_message:
+                return self.action  # type: ignore # action is always cast to a ResponseAction not a str
+
         return None
 
     @staticmethod
