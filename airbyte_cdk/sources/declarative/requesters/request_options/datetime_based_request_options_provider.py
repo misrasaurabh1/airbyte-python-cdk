@@ -63,7 +63,34 @@ class DatetimeBasedRequestOptionsProvider(RequestOptionsProvider):
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> Union[Mapping[str, Any], str]:
-        return self._get_request_options(RequestOptionType.body_data, stream_slice)
+        # Inline for micro speedup and eliminate one Python call frame
+        options: MutableMapping[str, Any] = {}
+        if not stream_slice:
+            return options
+
+        if (
+            self.start_time_option
+            and self.start_time_option.inject_into == RequestOptionType.body_data
+        ):
+            k = self._partition_field_start.eval(self.config)
+            # Avoiding dict.get on StreamSlice since its get simply wraps self._stream_slice.get (see airbyte_cdk/sources/types.py)
+            v = (
+                stream_slice._stream_slice.get(k)
+                if hasattr(stream_slice, "_stream_slice")
+                else stream_slice.get(k)
+            )  # fallback, just in case
+            self.start_time_option.inject_into_request(options, v, self.config)
+
+        if self.end_time_option and self.end_time_option.inject_into == RequestOptionType.body_data:
+            k = self._partition_field_end.eval(self.config)
+            v = (
+                stream_slice._stream_slice.get(k)
+                if hasattr(stream_slice, "_stream_slice")
+                else stream_slice.get(k)
+            )
+            self.end_time_option.inject_into_request(options, v, self.config)
+
+        return options
 
     def get_request_body_json(
         self,
