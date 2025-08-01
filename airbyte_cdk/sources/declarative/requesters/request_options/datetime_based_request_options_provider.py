@@ -2,6 +2,8 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
 
+from __future__ import annotations
+
 from dataclasses import InitVar, dataclass
 from typing import Any, Mapping, MutableMapping, Optional, Union
 
@@ -81,12 +83,19 @@ class DatetimeBasedRequestOptionsProvider(RequestOptionsProvider):
         if not stream_slice:
             return options
 
-        if self.start_time_option and self.start_time_option.inject_into == option_type:
-            start_time_value = stream_slice.get(self._partition_field_start.eval(self.config))
-            self.start_time_option.inject_into_request(options, start_time_value, self.config)
+        cfg = self.config
+        has_start = self.start_time_option and self.start_time_option.inject_into == option_type
+        has_end = self.end_time_option and self.end_time_option.inject_into == option_type
 
-        if self.end_time_option and self.end_time_option.inject_into == option_type:
-            end_time_value = stream_slice.get(self._partition_field_end.eval(self.config))
-            self.end_time_option.inject_into_request(options, end_time_value, self.config)
+        # Only call .eval once per field when needed!
+        if has_start:
+            key = self._partition_field_start.eval(cfg)
+            start_time_value = stream_slice.get(key)
+            self.start_time_option.inject_into_request(options, start_time_value, cfg)
+
+        if has_end:
+            key = self._partition_field_end.eval(cfg)
+            end_time_value = stream_slice.get(key)
+            self.end_time_option.inject_into_request(options, end_time_value, cfg)
 
         return options

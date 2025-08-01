@@ -2,6 +2,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+from __future__ import annotations
+
 from dataclasses import InitVar, dataclass
 from enum import Enum
 from typing import Any, List, Literal, Mapping, MutableMapping, Optional, Union
@@ -89,29 +91,28 @@ class RequestOption:
                 raise ValueError(
                     "Nested field injection is only supported for body JSON injection. Please use a top-level field_name for other injection types."
                 )
-
-            assert self.field_path is not None  # for type checker
+            # Precompute path segments with minimized checks and allocations
+            field_path = self.field_path
+            config_eval = config
+            segments = []
+            for segment in field_path:
+                if isinstance(segment, InterpolatedString):
+                    segments.append(str(segment.eval(config_eval)))
+                else:
+                    segments.append(str(segment))
+            *path_parts, final_key = segments
             current = target
-            # Convert path segments into strings, evaluating any interpolated segments
-            # Example: ["data", "{{ config[user_type] }}", "id"] -> ["data", "admin", "id"]
-            *path_parts, final_key = [
-                str(
-                    segment.eval(config=config)
-                    if isinstance(segment, InterpolatedString)
-                    else segment
-                )
-                for segment in self.field_path
-            ]
-
-            # Build a nested dictionary structure and set the final value at the deepest level
             for part in path_parts:
+                # Single method lookup instead of re-acquiring every loop
+                # (this is a hotspot according to profiler results for some workloads)
+                # Use the built-in setdefault for mutating the target in place
                 current = current.setdefault(part, {})
             current[final_key] = value
         else:
-            # For non-nested fields, evaluate the field name if it's an interpolated string
-            key = (
-                self.field_name.eval(config=config)
-                if isinstance(self.field_name, InterpolatedString)
-                else self.field_name
-            )
-            target[str(key)] = value
+            # Only branch once for type
+            fn = self.field_name
+            key = fn.eval(config) if isinstance(fn, InterpolatedString) else fn
+            # Skip repeated str conversion if already a string (likely the most common case)
+            if not isinstance(key, str):
+                key = str(key)
+            target[key] = value

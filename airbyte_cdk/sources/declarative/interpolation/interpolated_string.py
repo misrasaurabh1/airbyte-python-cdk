@@ -2,6 +2,8 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
+from __future__ import annotations
+
 from dataclasses import InitVar, dataclass
 from typing import Any, Mapping, Optional, Union
 
@@ -40,16 +42,26 @@ class InterpolatedString:
         :param kwargs: Optional parameters used for interpolation
         :return: The interpolated string
         """
-        if self._is_plain_string:
+        is_plain = self._is_plain_string
+        if is_plain is True:
             return self.string
-        if self._is_plain_string is None:
-            # Let's check whether output from evaluation is the same as input.
-            # This indicates occurrence of a plain string, not a template and we can skip Jinja in subsequent runs.
-            evaluated = self._interpolation.eval(
-                self.string, config, self.default, parameters=self._parameters, **kwargs
-            )
-            self._is_plain_string = self.string == evaluated
-            return evaluated
+        elif is_plain is None:
+            # Heuristic: if no jinja delimiters, mark as plain without invoking jinja at all!
+            # (This shortcut avoids even the first roundtrip through Jinja parser when not needed.)
+            s = self.string
+            if "{{" not in s and "{%" not in s:
+                self._is_plain_string = True
+                return s
+            # Otherwise, fallback to evaluation and cache result
+            interpolation = self._interpolation
+            params = self._parameters
+            result = interpolation.eval(s, config, self.default, parameters=params, **kwargs)
+            if s == result:
+                self._is_plain_string = True
+            else:
+                self._is_plain_string = False
+            return result
+        # _is_plain_string is False, do normal evaluation
         return self._interpolation.eval(
             self.string, config, self.default, parameters=self._parameters, **kwargs
         )
