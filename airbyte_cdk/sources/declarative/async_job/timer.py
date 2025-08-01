@@ -30,7 +30,7 @@ class Timer:
         return elapsed_period
 
     def has_timed_out(self) -> bool:
-        if not self.is_started():
+        if self._start_datetime is None:
             return False
         return self.elapsed_time > self._timeout  # type: ignore  # given the job timer is started, we assume there is an elapsed_period
 
