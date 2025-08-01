@@ -65,6 +65,7 @@ class ResumableFullRefreshCursor(DeclarativeCursor):
     ) -> Mapping[str, Any]:
         return {}
 
+    @staticmethod
     def get_request_headers(
         self,
         *,
