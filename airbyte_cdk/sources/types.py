@@ -93,7 +93,7 @@ class StreamSlice(Mapping[str, Any]):
         if partition.keys() & cursor_slice.keys():
             raise ValueError("Keys for partition and incremental sync cursor should not overlap")
 
-        self._stream_slice = dict(partition) | dict(cursor_slice)
+        self._stream_slice = {**partition, **cursor_slice}
 
     @property
     def partition(self) -> Mapping[str, Any]:
