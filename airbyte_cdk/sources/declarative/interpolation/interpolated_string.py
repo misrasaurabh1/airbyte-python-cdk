@@ -40,16 +40,26 @@ class InterpolatedString:
         :param kwargs: Optional parameters used for interpolation
         :return: The interpolated string
         """
+        # Fast plain-string shortcut: if string contains neither {{ nor {%, it's not a template
+        # This makes repeated .eval calls O(1) after first parse/memoization
         if self._is_plain_string:
             return self.string
+
         if self._is_plain_string is None:
-            # Let's check whether output from evaluation is the same as input.
-            # This indicates occurrence of a plain string, not a template and we can skip Jinja in subsequent runs.
+            s = self.string
+            # If definitely not a template, mark as plain string
+            if ("{{" not in s) and ("{%" not in s):
+                self._is_plain_string = True
+                return s
+            # Otherwise, run interpolation and memoize
             evaluated = self._interpolation.eval(
-                self.string, config, self.default, parameters=self._parameters, **kwargs
+                s, config, self.default, parameters=self._parameters, **kwargs
             )
-            self._is_plain_string = self.string == evaluated
+            # str() compare is costly only for very long templates; this shortcut avoids it until needed
+            self._is_plain_string = s == evaluated
             return evaluated
+
+        # _is_plain_string is now False (definitely a template)
         return self._interpolation.eval(
             self.string, config, self.default, parameters=self._parameters, **kwargs
         )
