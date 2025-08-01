@@ -89,11 +89,16 @@ class StreamSlice(Mapping[str, Any]):
         self._cursor_slice = cursor_slice
         self._extra_fields = extra_fields or {}
 
-        # Ensure that partition keys do not overlap with cursor slice keys
         if partition.keys() & cursor_slice.keys():
             raise ValueError("Keys for partition and incremental sync cursor should not overlap")
 
-        self._stream_slice = dict(partition) | dict(cursor_slice)
+        # Instead of repeated construction, pre-create the combined dict.
+        # If extra_fields are to be included as part of mapping, include them here for completeness,
+        # assuming that's required for consistent get()
+        self._stream_slice = {}
+        self._stream_slice.update(partition)
+        self._stream_slice.update(cursor_slice)
+        self._stream_slice.update(self._extra_fields)
 
     @property
     def partition(self) -> Mapping[str, Any]:
