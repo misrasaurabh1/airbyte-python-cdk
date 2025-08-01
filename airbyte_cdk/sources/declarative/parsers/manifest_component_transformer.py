@@ -2,7 +2,6 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-import copy
 import typing
 from typing import Any, Dict, Mapping, Optional
 
@@ -107,7 +106,7 @@ class ManifestComponentTransformer:
         :param use_parent_parameters: If set, parent parameters will be used as the source of truth when key names are the same
         :return: A deep copy of the transformed component with types and parameters persisted to it
         """
-        propagated_component = dict(copy.deepcopy(declarative_component))
+        propagated_component = dict(declarative_component)
         if "type" not in propagated_component:
             # If the component has class_name we assume that this is a reference to a custom component. This is a slight change to
             # existing behavior because we originally allowed for either class or type to be specified. After the pydantic migration,
@@ -122,7 +121,7 @@ class ManifestComponentTransformer:
 
         # Combines parameters defined at the current level with parameters from parent components. Parameters at the current
         # level take precedence
-        current_parameters = dict(copy.deepcopy(parent_parameters))
+        current_parameters = dict(parent_parameters) if parent_parameters else {}
         component_parameters = propagated_component.pop(PARAMETERS_STR, {})
         current_parameters = (
             {**component_parameters, **current_parameters}
