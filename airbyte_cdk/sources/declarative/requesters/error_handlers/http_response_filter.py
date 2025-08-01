@@ -117,6 +117,7 @@ class HttpResponseFilter:
 
         return None
 
+    @staticmethod
     def _match_default_error_mapping(
         self, mapped_key: Union[int, type[Exception]]
     ) -> Optional[ErrorResolution]:
