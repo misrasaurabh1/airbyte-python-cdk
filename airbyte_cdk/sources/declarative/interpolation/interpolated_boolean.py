@@ -60,6 +60,24 @@ class InterpolatedBoolean:
                 parameters=self._parameters,
                 **additional_parameters,
             )
+            # Use set for O(1) lookup instead of list
+            FALSE_VALUES = {
+                "False",
+                "false",
+                "{}",
+                "[]",
+                "()",
+                "",
+                "0",
+                "0.0",
+                False,
+                tuple(),
+                frozenset(),
+                (),
+                set(),
+                list(),
+                dict(),
+            }
             if evaluated in FALSE_VALUES:
                 return False
             # The presence of a value is generally regarded as truthy, so we treat it as such
