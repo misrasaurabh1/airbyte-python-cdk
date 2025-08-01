@@ -56,7 +56,7 @@ class PerPartitionCursor(DeclarativeCursor):
         # the oldest partitions can be efficiently removed, maintaining the most recent partitions.
         self._cursor_per_partition: OrderedDict[str, DeclarativeCursor] = OrderedDict()
         self._over_limit = 0
-        self._partition_serializer = PerPartitionKeySerializer()
+        self._partition_serializer = _PARTITION_SERIALIZER
 
     def stream_slices(self) -> Iterable[StreamSlice]:
         slices = self._partition_router.stream_slices()
@@ -184,10 +184,10 @@ class PerPartitionCursor(DeclarativeCursor):
         return state
 
     def _get_state_for_partition(self, partition: Mapping[str, Any]) -> Optional[StreamState]:
-        cursor = self._cursor_per_partition.get(self._to_partition_key(partition))
-        if cursor:
+        part_key = self._to_partition_key(partition)
+        cursor = self._cursor_per_partition.get(part_key)
+        if cursor is not None:
             return cursor.get_stream_state()
-
         return None
 
     @staticmethod
@@ -203,10 +203,6 @@ class PerPartitionCursor(DeclarativeCursor):
     def select_state(self, stream_slice: Optional[StreamSlice] = None) -> Optional[StreamState]:
         if not stream_slice:
             raise ValueError("A partition needs to be provided in order to extract a state")
-
-        if not stream_slice:
-            return None
-
         return self._get_state_for_partition(stream_slice.partition)
 
     def _create_cursor(self, cursor_state: Any) -> DeclarativeCursor:
@@ -363,3 +359,6 @@ class PerPartitionCursor(DeclarativeCursor):
         cursor = self._create_cursor(partition_state)
 
         self._cursor_per_partition[partition_key] = cursor
+
+
+_PARTITION_SERIALIZER = PerPartitionKeySerializer()
