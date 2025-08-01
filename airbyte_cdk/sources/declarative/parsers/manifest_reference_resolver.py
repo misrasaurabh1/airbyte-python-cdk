@@ -107,24 +107,40 @@ class ManifestReferenceResolver:
         return self._evaluate_node(manifest, manifest, set())  # type: ignore[no-any-return]
 
     def _evaluate_node(self, node: Any, manifest: Mapping[str, Any], visited: Set[Any]) -> Any:
+        # Fast path for dict
         if isinstance(node, dict):
-            evaluated_dict = {
-                k: self._evaluate_node(v, manifest, visited)
-                for k, v in node.items()
-                if not self._is_ref_key(k)
-            }
-            if REF_TAG in node:
+            ref_tag = REF_TAG  # Localize lookup
+            if ref_tag in node:
                 # The node includes a $ref key, so we splat the referenced value(s) into the evaluated dict
-                evaluated_ref = self._evaluate_node(node[REF_TAG], manifest, visited)
+                # Only evaluate non-$ref keys
+                evaluated_dict = {}
+                for k, v in node.items():
+                    if k == ref_tag:
+                        continue
+                    evaluated_dict[k] = self._evaluate_node(v, manifest, visited)
+                evaluated_ref = self._evaluate_node(node[ref_tag], manifest, visited)
                 if not isinstance(evaluated_ref, dict):
                     return evaluated_ref
-                else:
-                    # The values defined on the component take precedence over the reference values
-                    return evaluated_ref | evaluated_dict
+                # The values defined on the component take precedence over the reference values
+                evaluated_ref.update(evaluated_dict)
+                return evaluated_ref
             else:
-                return evaluated_dict
+                # Avoid generator - do key test inline for speed, avoid calling function
+                return {
+                    k: self._evaluate_node(v, manifest, visited)
+                    for k, v in node.items()
+                    if k != REF_TAG
+                }
+
+        # Fast path for list
         elif isinstance(node, list):
-            return [self._evaluate_node(v, manifest, visited) for v in node]
+            if not node:
+                return []
+            # Use list comprehension for speed, localize method
+            _eval_node = self._evaluate_node
+            return [_eval_node(v, manifest, visited) for v in node]
+
+        # Fast path for reference-strings
         elif self._is_ref(node):
             if node in visited:
                 raise CircularReferenceException(node)
@@ -132,21 +148,24 @@ class ManifestReferenceResolver:
             ret = self._evaluate_node(self._lookup_ref_value(node, manifest), manifest, visited)
             visited.remove(node)
             return ret
+
         else:
             return node
 
     def _lookup_ref_value(self, ref: str, manifest: Mapping[str, Any]) -> Any:
+        # 're.match' is fairly fast and always needed for correctness
         ref_match = re.match(r"#/(.*)", ref)
         if not ref_match:
             raise ValueError(f"Invalid reference format {ref}")
         try:
-            path = ref_match.groups()[0]
+            path = ref_match.group(1)
             return self._read_ref_value(path, manifest)
         except (AttributeError, KeyError, IndexError):
             raise UndefinedReferenceException(path, ref)
 
     @staticmethod
     def _is_ref(node: Any) -> bool:
+        # In hot path: avoid unnecessary isinstance for non-str -- early out for common types
         return isinstance(node, str) and node.startswith("#/")
 
     @staticmethod
