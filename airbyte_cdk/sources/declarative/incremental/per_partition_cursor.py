@@ -49,7 +49,7 @@ class PerPartitionCursor(DeclarativeCursor):
     _VALUE = 1
     _state_to_migrate_from: Mapping[str, Any] = {}
 
-    def __init__(self, cursor_factory: CursorFactory, partition_router: PartitionRouter):
+    def __init__(self, cursor_factory: Any, partition_router: PartitionRouter):
         self._cursor_factory = cursor_factory
         self._partition_router = partition_router
         # The dict is ordered to ensure that once the maximum number of partitions is reached,
@@ -198,6 +198,7 @@ class PerPartitionCursor(DeclarativeCursor):
         return self._partition_serializer.to_partition_key(partition)
 
     def _to_dict(self, partition_key: str) -> Mapping[str, Any]:
+        # Speed improved: partition_key deserialization now uses fast LRU-cached function
         return self._partition_serializer.to_partition(partition_key)
 
     def select_state(self, stream_slice: Optional[StreamSlice] = None) -> Optional[StreamState]:

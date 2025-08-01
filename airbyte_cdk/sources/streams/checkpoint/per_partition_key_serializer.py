@@ -1,6 +1,7 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
 import json
+from functools import lru_cache
 from typing import Any, Mapping
 
 
@@ -18,5 +19,6 @@ class PerPartitionKeySerializer:
         return json.dumps(to_serialize, indent=None, separators=(",", ":"), sort_keys=True)
 
     @staticmethod
+    @lru_cache(maxsize=2048)
     def to_partition(to_deserialize: Any) -> Mapping[str, Any]:
         return json.loads(to_deserialize)  # type: ignore # The partition is known to be a dict, but the type hint is Any
