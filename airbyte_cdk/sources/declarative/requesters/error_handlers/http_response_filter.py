@@ -73,27 +73,23 @@ class HttpResponseFilter:
         self, response_or_exception: Optional[Union[requests.Response, Exception]]
     ) -> Optional[ErrorResolution]:
         filter_action = self._matches_filter(response_or_exception)
-        mapped_key = (
-            response_or_exception.status_code
-            if isinstance(response_or_exception, requests.Response)
-            else response_or_exception.__class__
-        )
 
-        if isinstance(mapped_key, (int, Exception)):
-            default_mapped_error_resolution = self._match_default_error_mapping(mapped_key)
+        if isinstance(response_or_exception, requests.Response):
+            mapped_key = response_or_exception.status_code
         else:
-            default_mapped_error_resolution = None
+            mapped_key = type(response_or_exception)
+
+        default_mapped_error_resolution = DEFAULT_ERROR_MAPPING.get(mapped_key)
 
         if filter_action is not None:
-            default_error_message = (
-                default_mapped_error_resolution.error_message
-                if default_mapped_error_resolution
-                else ""
+            # Evaluate custom error message if any, else use default
+            error_message = (
+                self._create_error_message(response_or_exception)
+                if isinstance(response_or_exception, requests.Response)
+                else None
             )
-            error_message = None
-            if isinstance(response_or_exception, requests.Response):
-                error_message = self._create_error_message(response_or_exception)
-            error_message = error_message or default_error_message
+            if not error_message and default_mapped_error_resolution:
+                error_message = default_mapped_error_resolution.error_message
 
             if self.failure_type and filter_action == ResponseAction.FAIL:
                 failure_type = self.failure_type
@@ -105,14 +101,17 @@ class HttpResponseFilter:
             return ErrorResolution(
                 response_action=filter_action,
                 failure_type=failure_type,
-                error_message=error_message,
+                error_message=error_message or "",
             )
 
+        # Filter defaults: If no filter is specified, defer to the default error resolution
+        # The following logic is equivalent to source since __post_init__ guarantees http_codes is a set, not list.
         if (
-            (isinstance(self.http_codes, list) and len(self.http_codes)) is None
+            not self.http_codes
             and self.predicate is None
             and self.error_message_contains is None
-        ) and default_mapped_error_resolution:
+            and default_mapped_error_resolution
+        ):
             return default_mapped_error_resolution
 
         return None
@@ -130,12 +129,13 @@ class HttpResponseFilter:
         :param response: The HTTP response to evaluate
         :return: The action to execute. None if the response does not match the filter
         """
-        if isinstance(response_or_exception, requests.Response) and (
-            response_or_exception.status_code in self.http_codes  # type: ignore # http_codes set is always initialized to a value in __post_init__
-            or self._response_matches_predicate(response_or_exception)
-            or self._response_contains_error_message(response_or_exception)
-        ):
-            return self.action  # type: ignore # action is always cast to a ResponseAction not a str
+        if isinstance(response_or_exception, requests.Response):
+            if (
+                response_or_exception.status_code in self.http_codes  # type: ignore # http_codes set is always initialized to a value in __post_init__
+                or self._response_matches_predicate(response_or_exception)
+                or self._response_contains_error_message(response_or_exception)
+            ):
+                return self.action  # type: ignore # action is always cast to a ResponseAction not a str
         return None
 
     @staticmethod
