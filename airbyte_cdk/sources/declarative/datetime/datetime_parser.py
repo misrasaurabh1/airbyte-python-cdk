@@ -46,18 +46,17 @@ class DatetimeParser:
         # See https://stackoverflow.com/a/4974930
         if format == "%s":
             return str(int(dt.timestamp()))
-        if format == "%s_as_float":
+        elif format == "%s_as_float":
             return str(float(dt.timestamp()))
-        if format == "%epoch_microseconds":
+        elif format == "%epoch_microseconds":
             return str(int(dt.timestamp() * 1_000_000))
-        if format == "%ms":
+        elif format == "%ms":
             # timstamp() returns a float representing the number of seconds since the unix epoch
             return str(int(dt.timestamp() * 1000))
-        if "%_ms" in format:
-            _format = format.replace("%_ms", "%f")
+        elif "%_ms" in format:
             milliseconds = int(dt.microsecond / 1000)
-            formatted_dt = dt.strftime(_format).replace(dt.strftime("%f"), "%03d" % milliseconds)
-            return formatted_dt
+            _format = format.replace("%_ms", "%03d" % milliseconds)
+            return dt.strftime(_format)
         else:
             return dt.strftime(format)
 
