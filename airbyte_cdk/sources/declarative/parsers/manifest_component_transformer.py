@@ -201,7 +201,7 @@ class ManifestComponentTransformer:
 
     @staticmethod
     def _has_nested_components(propagated_component: Dict[str, Any]) -> bool:
-        for k, v in propagated_component.items():
+        for v in propagated_component.values():
             if isinstance(v, dict) and v.get("type"):
                 return True
         return False
