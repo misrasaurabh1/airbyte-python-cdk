@@ -82,7 +82,7 @@ assert not ab_datetime_try_parse("foo")                    # Invalid: not parsab
 """
 
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional, Union, overload
+from typing import Any, Union, overload
 
 from dateutil import parser
 from typing_extensions import Never
@@ -389,57 +389,118 @@ def ab_datetime_parse(dt_str: str | int) -> AirbyteDateTime:
         >>> ab_datetime_parse("2023-03-14")  # Date-only
         '2023-03-14T00:00:00+00:00'
     """
-    try:
-        # Handle numeric values as Unix timestamps (UTC)
-        if isinstance(dt_str, int) or (
-            isinstance(dt_str, str)
-            and (dt_str.isdigit() or (dt_str.startswith("-") and dt_str[1:].isdigit()))
-        ):
-            timestamp = int(dt_str)
+    # Fast path: integer or numeric string (UNIX seconds)
+    if type(dt_str) is int:
+        # Common case: UNIX timestamp
+        if dt_str < 0:
+            raise ValueError("Timestamp cannot be negative")
+        if abs(dt_str) > 9999999999:
+            raise ValueError("Timestamp value too large")
+        instant = Instant.from_timestamp(dt_str)
+        return AirbyteDateTime.from_datetime(instant.py_datetime())
+    if type(dt_str) is str:
+        s = dt_str
+        l = len(s)
+
+        # Strings that are legal integer timestamps, e.g. "1678806000"
+        # Only compare if limited length (common short int strings), else falls through to fallback parsing
+        if s.isdigit() or (s.startswith("-") and s[1:].isdigit()):
+            try:
+                timestamp = int(s)
+            except Exception:
+                raise ValueError(f"Could not parse datetime string: {dt_str}")
             if timestamp < 0:
                 raise ValueError("Timestamp cannot be negative")
-            if len(str(abs(timestamp))) > 10:
+            if abs(timestamp) > 9999999999:
                 raise ValueError("Timestamp value too large")
             instant = Instant.from_timestamp(timestamp)
             return AirbyteDateTime.from_datetime(instant.py_datetime())
 
-        if not isinstance(dt_str, str):
-            raise ValueError(
-                f"Could not parse datetime string: expected string or integer, got {type(dt_str)}"
-            )
-
-        # Handle date-only format first
-        if ":" not in dt_str and dt_str.count("-") == 2 and "/" not in dt_str:
+        # Date-only format: "YYYY-MM-DD"
+        if (
+            l == 10
+            and s[4] == "-"
+            and s[7] == "-"
+            and s.count("-") == 2
+            and ":" not in s
+            and "/" not in s
+        ):
+            # (don't use split; just slice since always 10 chars)
             try:
-                year, month, day = map(int, dt_str.split("-"))
+                year = int(s[:4])
+                month = int(s[5:7])
+                day = int(s[8:10])
                 if not (1 <= month <= 12 and 1 <= day <= 31):
-                    raise ValueError(f"Invalid date format: {dt_str}")
+                    raise ValueError(f"Invalid date format: {s}")
                 instant = Instant.from_utc(year, month, day, 0, 0, 0)
                 return AirbyteDateTime.from_datetime(instant.py_datetime())
-            except (ValueError, TypeError):
+            except Exception:
                 raise ValueError(f"Invalid date format: {dt_str}")
 
-        # Reject time-only strings without date
-        if ":" in dt_str and dt_str.count("-") < 2 and dt_str.count("/") < 2:
+        # Reject time-only strings (no proper date part): e.g. "12:33:44"
+        colon = s.find(":")
+        if colon != -1 and (s.count("-") < 2 and s.count("/") < 2):
             raise ValueError(f"Missing date part in datetime string: {dt_str}")
 
-        # Try parsing with dateutil for timezone handling
+        # Fast path for ISO8601-style input: e.g. "2021-06-30T15:30:23Z", with or without millis
+        # Most state fields have this shape!
+        # We parse a few common formats explicitly before falling back to dateutil/parser
+        T_pos = s.find("T")
+        if T_pos == 10 and (s.endswith("Z") or "+" in s or "-" in s[11:]):
+            # substrings: [YYYY-MM-DD]T[HH:MM:SS[.sss]][Z|(+|-)HH:MM]
+            try:
+                # Handle: "YYYY-MM-DDTHH:MM:SSZ"
+                # Handle: "YYYY-MM-DDTHH:MM:SS.sssZ"
+                z_pos = s.find("Z")
+                if z_pos != -1:
+                    frac = s.find(".")
+                    if frac != -1 and frac > T_pos:
+                        dt_obj = datetime.strptime(s, "%Y-%m-%dT%H:%M:%S.%fZ")
+                    else:
+                        dt_obj = datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ")
+                    dt_obj = dt_obj.replace(tzinfo=timezone.utc)
+                    return AirbyteDateTime.from_datetime(dt_obj)
+                # Handle offset: "+HH:MM" or "-HH:MM"
+                plus = s.find("+", T_pos)
+                minus = s.find("-", T_pos)
+                off_pos = plus if plus != -1 else minus
+                if off_pos != -1:
+                    main, offset = s[:off_pos], s[off_pos:]
+                    frac = main.find(".", T_pos)
+                    if frac != -1:
+                        dt_obj = datetime.strptime(main, "%Y-%m-%dT%H:%M:%S.%f")
+                    else:
+                        dt_obj = datetime.strptime(main, "%Y-%m-%dT%H:%M:%S")
+                    # Parse offset manually (HH:MM or HHMM)
+                    if offset[-3] == ":":
+                        hh = int(offset[1:3])
+                        mm = int(offset[4:6])
+                    else:
+                        # rare, e.g. "+0000"
+                        hh = int(offset[1:3])
+                        mm = int(offset[3:5])
+                    delta = timedelta(hours=hh, minutes=mm)
+                    if offset[0] == "-":
+                        delta = -delta
+                    tz = timezone(delta)
+                    dt_obj = dt_obj.replace(tzinfo=tz)
+                    return AirbyteDateTime.from_datetime(dt_obj)
+            except Exception:
+                pass  # fall through to dateutil/parser
+
+        # Fallback: use powerful but slow dateutil.parser
         try:
-            parsed = parser.parse(dt_str)
+            parsed = parser.parse(s)
             if parsed.tzinfo is None:
                 parsed = parsed.replace(tzinfo=timezone.utc)
-
             return AirbyteDateTime.from_datetime(parsed)
-        except (ValueError, TypeError):
+        except Exception:
             raise ValueError(f"Could not parse datetime string: {dt_str}")
-    except ValueError as e:
-        if "Invalid date format:" in str(e):
-            raise
-        if "Timestamp cannot be negative" in str(e):
-            raise
-        if "Timestamp value too large" in str(e):
-            raise
-        raise ValueError(f"Could not parse datetime string: {dt_str}")
+
+    # Detect explicitly wrong-type early:
+    raise ValueError(
+        f"Could not parse datetime string: expected string or integer, got {type(dt_str)}"
+    )
 
 
 def ab_datetime_try_parse(dt_str: str) -> AirbyteDateTime | None:
