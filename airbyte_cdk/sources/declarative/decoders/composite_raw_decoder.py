@@ -109,11 +109,10 @@ class CsvParser(Parser):
         """
         Get delimiter from the configuration. Check for the escape character and decode it.
         """
-        if self.delimiter is not None:
-            if self.delimiter.startswith("\\"):
-                self.delimiter = self.delimiter.encode("utf-8").decode("unicode_escape")
-
-        return self.delimiter
+        delimiter = self.delimiter
+        if delimiter is not None and delimiter and delimiter[0] == "\\":
+            return delimiter.encode("utf-8").decode("unicode_escape")
+        return delimiter
 
     def parse(self, data: BufferedIOBase) -> PARSER_OUTPUT_TYPE:
         """
