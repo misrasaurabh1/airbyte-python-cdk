@@ -28,15 +28,19 @@ _SEVERITY_BY_LOG_LEVEL = {
 
 def _is_severe_enough(threshold: Level, level: Level) -> bool:
     if threshold not in _SEVERITY_BY_LOG_LEVEL:
-        _LOGGER.warning(
-            f"Log level {threshold} for threshold is not supported. This is probably a CDK bug. Please contact Airbyte."
-        )
+        if threshold not in _unsupported_threshold_reported:
+            _LOGGER.warning(
+                f"Log level {threshold} for threshold is not supported. This is probably a CDK bug. Please contact Airbyte."
+            )
+            _unsupported_threshold_reported.add(threshold)
         return True
 
     if level not in _SEVERITY_BY_LOG_LEVEL:
-        _LOGGER.warning(
-            f"Log level {level} is not supported. This is probably a source bug. Please contact the owner of the source or Airbyte."
-        )
+        if level not in _unsupported_level_reported:
+            _LOGGER.warning(
+                f"Log level {level} is not supported. This is probably a source bug. Please contact the owner of the source or Airbyte."
+            )
+            _unsupported_level_reported.add(level)
         return True
 
     return _SEVERITY_BY_LOG_LEVEL[threshold] >= _SEVERITY_BY_LOG_LEVEL[level]
@@ -135,3 +139,8 @@ class LogAppenderMessageRepositoryDecorator(MessageRepository):
             else:
                 first[key] = second[key]
         return first
+
+
+_unsupported_threshold_reported = set()
+
+_unsupported_level_reported = set()
