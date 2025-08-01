@@ -269,22 +269,40 @@ class PerPartitionCursor(DeclarativeCursor):
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> Union[Mapping[str, Any], str]:
-        if stream_slice:
-            if self._to_partition_key(stream_slice.partition) not in self._cursor_per_partition:
-                self._create_cursor_for_partition(self._to_partition_key(stream_slice.partition))
-            return self._partition_router.get_request_body_data(  # type: ignore # this always returns a mapping
-                stream_state=stream_state,
-                stream_slice=StreamSlice(partition=stream_slice.partition, cursor_slice={}),
-                next_page_token=next_page_token,
-            ) | self._cursor_per_partition[
-                self._to_partition_key(stream_slice.partition)
-            ].get_request_body_data(
-                stream_state=stream_state,
-                stream_slice=StreamSlice(partition={}, cursor_slice=stream_slice.cursor_slice),
-                next_page_token=next_page_token,
-            )
-        else:
+        if stream_slice is None:
             raise ValueError("A partition needs to be provided in order to get request body data")
+        # Optimize: compute partition_key only once
+        partition = stream_slice.partition
+        cursor_slice = stream_slice.cursor_slice
+        to_partition_key = self._to_partition_key
+        partition_router = self._partition_router
+        cursor_per_partition = self._cursor_per_partition
+
+        partition_key = to_partition_key(partition)
+        if partition_key not in cursor_per_partition:
+            self._create_cursor_for_partition(partition_key)
+        cursor = cursor_per_partition[partition_key]
+
+        # Use local variables and combine the dicts in one go for efficiency
+        router_data = partition_router.get_request_body_data(
+            stream_state=stream_state,
+            stream_slice=StreamSlice(partition=partition, cursor_slice={}),
+            next_page_token=next_page_token,
+        )
+        cursor_data = cursor.get_request_body_data(
+            stream_state=stream_state,
+            stream_slice=StreamSlice(partition={}, cursor_slice=cursor_slice),
+            next_page_token=next_page_token,
+        )
+        # More efficient dict merging -- since both are Mapping[str, Any]):
+        if not router_data:
+            return cursor_data
+        if not cursor_data:
+            return router_data
+        # Merge: cursor_data values take precedence
+        merged = dict(router_data)
+        merged.update(cursor_data)
+        return merged
 
     def get_request_body_json(
         self,
