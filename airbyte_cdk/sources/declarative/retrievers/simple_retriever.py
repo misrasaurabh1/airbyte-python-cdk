@@ -545,15 +545,17 @@ class SimpleRetriever(Retriever):
         if isinstance(stream_data, Record):
             # Record is not part of `StreamData` but is the most common implementation of `Mapping[str, Any]` which is part of `StreamData`
             return stream_data
-        elif isinstance(stream_data, (dict, Mapping)):
-            return Record(
-                data=dict(stream_data), associated_slice=stream_slice, stream_name=self.name
-            )
         elif isinstance(stream_data, AirbyteMessage) and stream_data.record:
             return Record(
                 data=stream_data.record.data,  # type:ignore # AirbyteMessage always has record.data
                 associated_slice=stream_slice,
                 stream_name=self.name,
+            )
+        elif isinstance(stream_data, dict):
+            return Record(data=stream_data, associated_slice=stream_slice, stream_name=self.name)
+        elif isinstance(stream_data, Mapping):
+            return Record(
+                data=dict(stream_data), associated_slice=stream_slice, stream_name=self.name
             )
         return None
 
