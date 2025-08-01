@@ -19,4 +19,6 @@ class PerPartitionKeySerializer:
 
     @staticmethod
     def to_partition(to_deserialize: Any) -> Mapping[str, Any]:
-        return json.loads(to_deserialize)  # type: ignore # The partition is known to be a dict, but the type hint is Any
+        if not hasattr(PerPartitionKeySerializer, "_json_decoder"):
+            PerPartitionKeySerializer._json_decoder = json.JSONDecoder()
+        return PerPartitionKeySerializer._json_decoder.decode(to_deserialize)  # type: ignore # The partition is known to be a dict, but the type hint is Any
