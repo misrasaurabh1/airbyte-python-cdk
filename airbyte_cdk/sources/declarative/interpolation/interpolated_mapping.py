@@ -36,16 +36,31 @@ class InterpolatedMapping:
         """
         valid_key_types = additional_parameters.pop("valid_key_types", (str,))
         valid_value_types = additional_parameters.pop("valid_value_types", None)
-        return {
-            self._interpolation.eval(
-                name,
-                config,
-                valid_types=valid_key_types,
-                parameters=self._parameters,
-                **additional_parameters,
-            ): self._eval(value, config, valid_types=valid_value_types, **additional_parameters)
-            for name, value in self.mapping.items()
-        }
+
+        result = {}
+        for name, value in self.mapping.items():
+            # Skip interpolation for keys that don't contain template syntax
+            if isinstance(name, str) and "{{" not in name and "{%" not in name:
+                k = name
+            else:
+                k = self._interpolation.eval(
+                    name,
+                    config,
+                    valid_types=valid_key_types,
+                    parameters=self._parameters,
+                    **additional_parameters,
+                )
+
+            # Skip interpolation for values that don't contain template syntax
+            if isinstance(value, str) and "{{" not in value and "{%" not in value:
+                v = value
+            else:
+                v = self._eval(
+                    value, config, valid_types=valid_value_types, **additional_parameters
+                )
+
+            result[k] = v
+        return result
 
     def _eval(self, value: str, config: Config, **kwargs: Any) -> Any:
         # The values in self._mapping can be of Any type
