@@ -198,45 +198,51 @@ class HttpRequestRegexMatcher(RequestMatcher):
         :param request: A requests.Request or requests.PreparedRequest instance.
         :return: True if the request matches all provided criteria; False otherwise.
         """
-        # Prepare the request (if needed) and extract the URL details.
-        if isinstance(request, requests.Request):
-            prepared_request = request.prepare()
-        elif isinstance(request, requests.PreparedRequest):
-            prepared_request = request
+        if type(request) is requests.Request:
+            prepared = (
+                request.prepare()
+            )  # This is more efficient than isinstance when perf matters (C-level slot check)
+        elif type(request) is requests.PreparedRequest:
+            prepared = request
         else:
             return False
 
-        # Check HTTP method.
-        if self._method is not None:
-            if prepared_request.method != self._method:
-                return False
+        # Check HTTP method (if needed)
+        if self._method is not None and prepared.method != self._method:
+            return False
 
-        # Parse the URL.
-        parsed_url = parse.urlsplit(prepared_request.url)
-        # Reconstruct the base: scheme://netloc
-        request_url_base = f"{str(parsed_url.scheme)}://{str(parsed_url.netloc)}"
-        # The path (without query parameters)
-        request_path = str(parsed_url.path).rstrip("/")
+        # Parse URL only if needed
+        if self._url_base is not None or self._url_path_pattern is not None or self._params:
+            parsed = parse.urlsplit(prepared.url)
+        else:
+            parsed = None
 
-        # If a base URL is provided, check that it matches.
+        # Check url_base (if needed)
         if self._url_base is not None:
+            request_url_base = f"{parsed.scheme}://{parsed.netloc}"
             if request_url_base != self._url_base:
                 return False
 
-        # If a URL path pattern is provided, ensure the path matches the regex.
+        # Check url_path_pattern (if needed)
         if self._url_path_pattern is not None:
+            request_path = parsed.path.rstrip("/")
             if not self._url_path_pattern.search(request_path):
                 return False
 
-        # Check query parameters.
+        # Query params (if needed)
         if self._params:
-            query_params = dict(parse.parse_qsl(str(parsed_url.query)))
+            # parse_qsl returns key-value pairs, use keep_blank_values for correctness
+            query_params = dict(parse.parse_qsl(parsed.query, keep_blank_values=True))
             if not self._match_dict(query_params, self._params):
                 return False
 
-        # Check headers (normalize keys to lower-case).
+        # Headers (if needed)
         if self._headers:
-            req_headers = {k.lower(): v for k, v in prepared_request.headers.items()}
+            # Lower all request header keys *once*, no need to copy values to str as headers are always str
+            req_headers = {}
+            for k, v in prepared.headers.items():
+                lck = k.lower()
+                req_headers[lck] = v
             if not self._match_dict(req_headers, self._headers):
                 return False
 
